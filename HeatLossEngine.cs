@@ -149,6 +149,7 @@ namespace BCCPlugIn
 
                 // Write file as UTF-16 LE (Revit's required encoding for shared param files)
                 // Use explicit StreamWriter so we control BOM and line endings precisely
+                // All NAME fields are pure ASCII — Revit C++ parser cannot handle Cyrillic in NAME
                 using (var sw = new StreamWriter(bimbccFilePath, false, Encoding.Unicode))
                 {
                     sw.WriteLine("# This is a Revit shared parameter file.");
@@ -156,23 +157,23 @@ namespace BCCPlugIn
                     sw.WriteLine("*META\tVERSION\tMINVER");
                     sw.WriteLine("META\t2\t1");
                     sw.WriteLine("*GROUP\tID\tNAME");
-                    sw.WriteLine("GROUP\t1\tBIMBCC_Теплопотери");
+                    sw.WriteLine("GROUP\t1\tBIMBCC_HeatLoss");
                     sw.WriteLine("*PARAM\tGUID\tNAME\tDATATYPE\tDATACATEGORY\tGROUP\tVISIBLE\tDESCRIPTION\tUSERMODIFIABLE\tHIDEWHENNOVALUE");
-                    sw.WriteLine("PARAM\te1b2c3d4-0001-4000-8000-000000000001\tBIMBCC_Номер помещения\tTEXT\t\t1\t1\tНомер помещения/пространства\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0002-4000-8000-000000000002\tBIMBCC_Температура наружного воздуха\tNUMBER\t\t1\t1\tТемпература наружного воздуха\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0003-4000-8000-000000000003\tBIMBCC_Температура помещения\tNUMBER\t\t1\t1\tТемпература помещения\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0004-4000-8000-000000000004\tBIMBCC_Имя помещения\tTEXT\t\t1\t1\tНаименование помещения\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0005-4000-8000-000000000005\tBIMBCC_Обозначение\tTEXT\t\t1\t1\tОбозначение конструкции\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0006-4000-8000-000000000006\tBIMBCC_Ориентация\tTEXT\t\t1\t1\tОриентация конструкции\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0007-4000-8000-000000000007\tBIMBCC_Длина\tLENGTH\t\t1\t1\tДлина конструкции\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0008-4000-8000-000000000008\tBIMBCC_Высота\tLENGTH\t\t1\t1\tВысота конструкции\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0009-4000-8000-000000000009\tBIMBCC_Площадь\tAREA\t\t1\t1\tПлощадь конструкции\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0010-4000-8000-000000000010\tBIMBCC_Коэффициент_n\tNUMBER\t\t1\t1\tКоэффициент n\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0011-4000-8000-000000000011\tBIMBCC_Коэффициент_теплопередачи\tNUMBER\t\t1\t1\tКоэффициент теплопередачи k\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0012-4000-8000-000000000012\tBIMBCC_b1\tNUMBER\t\t1\t1\tПоправка b1\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0013-4000-8000-000000000013\tBIMBCC_b2\tNUMBER\t\t1\t1\tПоправка b2\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0014-4000-8000-000000000014\tBIMBCC_Коэффициент_надбавки\tNUMBER\t\t1\t1\tКоэффициент надбавки\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0015-4000-8000-000000000015\tBIMBCC_Теплопотери\tNUMBER\t\t1\t1\tТеплопотери Q (Вт)\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0001-4000-8000-000000000001\tBIMBCC_SpaceNumber\tTEXT\t\t1\t1\tSpace number\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0002-4000-8000-000000000002\tBIMBCC_OutdoorTemp\tNUMBER\t\t1\t1\tOutdoor temperature\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0003-4000-8000-000000000003\tBIMBCC_IndoorTemp\tNUMBER\t\t1\t1\tIndoor temperature\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0004-4000-8000-000000000004\tBIMBCC_SpaceName\tTEXT\t\t1\t1\tSpace name\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0005-4000-8000-000000000005\tBIMBCC_Designation\tTEXT\t\t1\t1\tDesignation\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0006-4000-8000-000000000006\tBIMBCC_Orientation\tTEXT\t\t1\t1\tOrientation\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0007-4000-8000-000000000007\tBIMBCC_Length\tLENGTH\t\t1\t1\tLength\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0008-4000-8000-000000000008\tBIMBCC_Height\tLENGTH\t\t1\t1\tHeight\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0009-4000-8000-000000000009\tBIMBCC_Area\tAREA\t\t1\t1\tArea\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0010-4000-8000-000000000010\tBIMBCC_CoeffN\tNUMBER\t\t1\t1\tCoefficient n\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0011-4000-8000-000000000011\tBIMBCC_CoeffK\tNUMBER\t\t1\t1\tCoefficient k\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0012-4000-8000-000000000012\tBIMBCC_B1\tNUMBER\t\t1\t1\tB1 correction\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0013-4000-8000-000000000013\tBIMBCC_B2\tNUMBER\t\t1\t1\tB2 correction\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0014-4000-8000-000000000014\tBIMBCC_CoeffAllow\tNUMBER\t\t1\t1\tAllowance coefficient\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0015-4000-8000-000000000015\tBIMBCC_HeatLoss\tNUMBER\t\t1\t1\tHeat loss Q (W)\t1\t0");
                 }
 
                 // Save original filename BEFORE switching
@@ -184,31 +185,32 @@ namespace BCCPlugIn
 
                 if (defFile == null)
                 {
-                    result?.Logs.Add("Итерация 1 (подготовка): Не удалось открыть BIMBCC_HeatLoss_SharedParams.txt.");
+                    result?.Logs.Add("Итерация 1 (подготовка): OpenSharedParameterFile вернул null.");
                     return definitions;
                 }
 
-                DefinitionGroup group = defFile.Groups.get_Item("BIMBCC_Теплопотери")
-                                     ?? defFile.Groups.Create("BIMBCC_Теплопотери");
+                DefinitionGroup group = defFile.Groups.get_Item("BIMBCC_HeatLoss")
+                                     ?? defFile.Groups.Create("BIMBCC_HeatLoss");
 
                 // Build ExternalDefinition list — FILE IS STILL OPEN, filename unchanged
+                // ASCII names only — match exactly what's in the file above
                 var paramsToEnsure = new (string name, ForgeTypeId forgeType)[]
                 {
-                    ("BIMBCC_Номер помещения",               SpecTypeId.String.Text),
-                    ("BIMBCC_Температура наружного воздуха", SpecTypeId.Number),
-                    ("BIMBCC_Температура помещения",         SpecTypeId.Number),
-                    ("BIMBCC_Имя помещения",                 SpecTypeId.String.Text),
-                    ("BIMBCC_Обозначение",                   SpecTypeId.String.Text),
-                    ("BIMBCC_Ориентация",                    SpecTypeId.String.Text),
-                    ("BIMBCC_Длина",                         SpecTypeId.Length),
-                    ("BIMBCC_Высота",                        SpecTypeId.Length),
-                    ("BIMBCC_Площадь",                       SpecTypeId.Area),
-                    ("BIMBCC_Коэффициент_n",                 SpecTypeId.Number),
-                    ("BIMBCC_Коэффициент_теплопередачи",     SpecTypeId.Number),
-                    ("BIMBCC_b1",                            SpecTypeId.Number),
-                    ("BIMBCC_b2",                            SpecTypeId.Number),
-                    ("BIMBCC_Коэффициент_надбавки",          SpecTypeId.Number),
-                    ("BIMBCC_Теплопотери",                   SpecTypeId.Number)
+                    ("BIMBCC_SpaceNumber",  SpecTypeId.String.Text),
+                    ("BIMBCC_OutdoorTemp",  SpecTypeId.Number),
+                    ("BIMBCC_IndoorTemp",   SpecTypeId.Number),
+                    ("BIMBCC_SpaceName",    SpecTypeId.String.Text),
+                    ("BIMBCC_Designation",  SpecTypeId.String.Text),
+                    ("BIMBCC_Orientation",  SpecTypeId.String.Text),
+                    ("BIMBCC_Length",       SpecTypeId.Length),
+                    ("BIMBCC_Height",       SpecTypeId.Length),
+                    ("BIMBCC_Area",         SpecTypeId.Area),
+                    ("BIMBCC_CoeffN",       SpecTypeId.Number),
+                    ("BIMBCC_CoeffK",       SpecTypeId.Number),
+                    ("BIMBCC_B1",           SpecTypeId.Number),
+                    ("BIMBCC_B2",           SpecTypeId.Number),
+                    ("BIMBCC_CoeffAllow",   SpecTypeId.Number),
+                    ("BIMBCC_HeatLoss",     SpecTypeId.Number)
                 };
 
                 foreach (var item in paramsToEnsure)
@@ -766,50 +768,50 @@ namespace BCCPlugIn
         {
             if (cube == null || item == null) return;
 
-            // 1. Номер помещения
-            SetCubeParamValue(cube, item.SpaceNumber, "BIMBCC_Номер помещения", "ADSK_Номер помещения", "ADSK_Номер пространства", "Номер помещения", "Номер пространства", "Номер");
+            // 1. Space number
+            SetCubeParamValue(cube, item.SpaceNumber, "BIMBCC_SpaceNumber", "ADSK_Номер помещения", "Номер");
 
-            // 2. Температура наружного воздуха
-            SetCubeParamValue(cube, item.OutdoorTemp, "BIMBCC_Температура наружного воздуха", "ADSK_Температура наружного воздуха", "Температура наружного воздуха", "t_ext");
+            // 2. Outdoor temperature
+            SetCubeParamValue(cube, item.OutdoorTemp, "BIMBCC_OutdoorTemp", "t_ext");
 
-            // 3. Температура помещения
-            SetCubeParamValue(cube, item.IndoorTemp, "BIMBCC_Температура помещения", "ADSK_Температура помещения", "Температура помещения", "t_int");
+            // 3. Indoor temperature
+            SetCubeParamValue(cube, item.IndoorTemp, "BIMBCC_IndoorTemp", "t_int");
 
-            // 4. Наименование помещения
-            SetCubeParamValue(cube, item.SpaceName, "BIMBCC_Имя помещения", "ADSK_Имя помещения", "ADSK_Имя пространства", "Имя помещения", "Имя пространства", "Наименование", "Имя");
+            // 4. Space name
+            SetCubeParamValue(cube, item.SpaceName, "BIMBCC_SpaceName", "ADSK_Имя помещения", "ADSK_Имя пространства", "Наименование");
 
-            // 5. Обозначение ограждающей конструкции
-            SetCubeParamValue(cube, item.Designation, userDesignationParam, "BIMBCC_Обозначение", "ADSK_Обозначение", "ADSK_Марка", "Обозначение");
+            // 5. Designation
+            SetCubeParamValue(cube, item.Designation, userDesignationParam, "BIMBCC_Designation", "ADSK_Обозначение", "Обозначение");
 
-            // 6. Ориентация
-            SetCubeParamValue(cube, item.Orientation, "BIMBCC_Ориентация", "ADSK_Ориентация", "Ориентация");
+            // 6. Orientation
+            SetCubeParamValue(cube, item.Orientation, "BIMBCC_Orientation", "Ориентация");
 
-            // 7. Длина конструкции
-            SetCubeParamValue(cube, item.LengthMeters, "BIMBCC_Длина", "ADSK_Длина", "Длина");
+            // 7. Length
+            SetCubeParamValue(cube, item.LengthMeters, "BIMBCC_Length", "Длина");
 
-            // 8. Высота конструкции
-            SetCubeParamValue(cube, item.HeightMeters, "BIMBCC_Высота", "ADSK_Высота", "Высота");
+            // 8. Height
+            SetCubeParamValue(cube, item.HeightMeters, "BIMBCC_Height", "Высота");
 
-            // 9. Площадь
-            SetCubeParamValue(cube, item.AreaSqMeters, userAreaParam, "BIMBCC_Площадь", "ADSK_Площадь", "Площадь", "ADSK_Значение");
+            // 9. Area
+            SetCubeParamValue(cube, item.AreaSqMeters, userAreaParam, "BIMBCC_Area", "ADSK_Площадь", "Площадь");
 
-            // 10. Коэффициент n
-            SetCubeParamValue(cube, item.CoeffN, "BIMBCC_Коэффициент_n", "ADSK_Коэффициент_n", "Коэффициент_n", "n");
+            // 10. Coefficient n
+            SetCubeParamValue(cube, item.CoeffN, "BIMBCC_CoeffN", "n");
 
-            // 11. Коэффициент теплопередачи k
-            SetCubeParamValue(cube, item.CoeffK, "BIMBCC_Коэффициент_теплопередачи", "ADSK_Коэффициент_теплопередачи", "Коэффициент_теплопередачи", "k");
+            // 11. Coefficient k (heat transfer)
+            SetCubeParamValue(cube, item.CoeffK, "BIMBCC_CoeffK", "k");
 
             // 12. b1
-            SetCubeParamValue(cube, item.B1, "BIMBCC_b1", "ADSK_b1", "b1");
+            SetCubeParamValue(cube, item.B1, "BIMBCC_B1", "b1");
 
             // 13. b2
-            SetCubeParamValue(cube, item.B2, "BIMBCC_b2", "ADSK_b2", "b2");
+            SetCubeParamValue(cube, item.B2, "BIMBCC_B2", "b2");
 
-            // 14. Коэффициент надбавки
-            SetCubeParamValue(cube, item.CoeffAllowance, "BIMBCC_Коэффициент_надбавки", "ADSK_Коэффициент_надбавки", "Коэффициент_надбавки", "Надбавка");
+            // 14. Allowance coefficient
+            SetCubeParamValue(cube, item.CoeffAllowance, "BIMBCC_CoeffAllow", "Надбавка");
 
-            // 15. Теплопотери (Вт)
-            SetCubeParamValue(cube, item.HeatLossWatts, "BIMBCC_Теплопотери", "ADSK_Теплопотери", "Теплопотери", "Q");
+            // 15. Heat loss (W)
+            SetCubeParamValue(cube, item.HeatLossWatts, "BIMBCC_HeatLoss", "Q");
         }
 
         private void SetCubeParamValue(FamilyInstance cube, string strValue, params string[] paramNames)
@@ -836,18 +838,16 @@ namespace BCCPlugIn
                 {
                     if (p.StorageType == StorageType.Double)
                     {
-                        if (name.Contains("Площадь"))
-                        {
+                        // Detect unit type by parameter spec or name
+                        bool isArea   = name == "BIMBCC_Area"   || name.Contains("Площадь");
+                        bool isLength = name == "BIMBCC_Length" || name == "BIMBCC_Height"
+                                     || name.Contains("Длина")  || name.Contains("Высота");
+                        if (isArea)
                             p.Set(UnitUtils.ConvertToInternalUnits(doubleValue, UnitTypeId.SquareMeters));
-                        }
-                        else if (name.Contains("Длина") || name.Contains("Высота"))
-                        {
+                        else if (isLength)
                             p.Set(UnitUtils.ConvertToInternalUnits(doubleValue, UnitTypeId.Meters));
-                        }
                         else
-                        {
                             p.Set(doubleValue);
-                        }
                         return;
                     }
                     else if (p.StorageType == StorageType.String)
@@ -893,33 +893,35 @@ namespace BCCPlugIn
 
                 var schedulableFields = definition.GetSchedulableFields();
 
-                string[][] columnCandidates = new string[][]
+                // ASCII param names → Russian column headers set via ColumnHeading
+                var columns = new (string[] candidates, string header)[]
                 {
-                    new string[] { "BIMBCC_Номер помещения", "ADSK_Номер помещения", "Номер помещения" },
-                    new string[] { "BIMBCC_Температура наружного воздуха", "ADSK_Температура наружного воздуха", "Температура наружного воздуха" },
-                    new string[] { "BIMBCC_Температура помещения", "ADSK_Температура помещения", "Температура помещения" },
-                    new string[] { "BIMBCC_Имя помещения", "ADSK_Имя помещения", "Имя помещения", "ADSK_Имя пространства", "Имя пространства" },
-                    new string[] { targetDesignationParamName, "BIMBCC_Обозначение", "ADSK_Обозначение", "Обозначение" },
-                    new string[] { "BIMBCC_Ориентация", "ADSK_Ориентация", "Ориентация" },
-                    new string[] { "BIMBCC_Длина", "ADSK_Длина", "Длина" },
-                    new string[] { "BIMBCC_Высота", "ADSK_Высота", "Высота" },
-                    new string[] { targetAreaParamName, "BIMBCC_Площадь", "ADSK_Площадь", "Площадь" },
-                    new string[] { "BIMBCC_Коэффициент_n", "ADSK_Коэффициент_n", "Коэффициент_n" },
-                    new string[] { "BIMBCC_Коэффициент_теплопередачи", "ADSK_Коэффициент_теплопередачи", "Коэффициент_теплопередачи" },
-                    new string[] { "BIMBCC_b1", "ADSK_b1", "b1" },
-                    new string[] { "BIMBCC_b2", "ADSK_b2", "b2" },
-                    new string[] { "BIMBCC_Коэффициент_надбавки", "ADSK_Коэффициент_надбавки", "Коэффициент_надбавки" },
-                    new string[] { "BIMBCC_Теплопотери", "ADSK_Теплопотери", "Теплопотери" }
+                    (new[]{ "BIMBCC_SpaceNumber",  "ADSK_Номер помещения",   "Номер помещения" },  "Номер\nпомещения"),
+                    (new[]{ "BIMBCC_OutdoorTemp" },                                                 "Тнар (°C)"),
+                    (new[]{ "BIMBCC_IndoorTemp" },                                                  "Тпом (°C)"),
+                    (new[]{ "BIMBCC_SpaceName",    "ADSK_Имя помещения",     "Имя пространства" }, "Наименование"),
+                    (new[]{ targetDesignationParamName, "BIMBCC_Designation", "ADSK_Обозначение" }, "Обозначение"),
+                    (new[]{ "BIMBCC_Orientation",  "Ориентация" },                                  "Ориентация"),
+                    (new[]{ "BIMBCC_Length",        "Длина" },                                      "Длина (м)"),
+                    (new[]{ "BIMBCC_Height",        "Высота" },                                     "Высота (м)"),
+                    (new[]{ targetAreaParamName,    "BIMBCC_Area",            "Площадь" },           "Площадь (м²)"),
+                    (new[]{ "BIMBCC_CoeffN" },                                                      "n"),
+                    (new[]{ "BIMBCC_CoeffK" },                                                      "k (Вт/м²°C)"),
+                    (new[]{ "BIMBCC_B1" },                                                          "b1"),
+                    (new[]{ "BIMBCC_B2" },                                                          "b2"),
+                    (new[]{ "BIMBCC_CoeffAllow" },                                                  "(1+b1+b2)"),
+                    (new[]{ "BIMBCC_HeatLoss",      "Теплопотери" },                               "Q (Вт)")
                 };
 
                 ScheduleField fieldSpaceNumber = null;
-                ScheduleField fieldSpaceName = null;
+                ScheduleField fieldSpaceName   = null;
                 ScheduleField fieldDesignation = null;
                 int addedFieldsCount = 0;
 
-                for (int c = 0; c < columnCandidates.Length; c++)
+                for (int c = 0; c < columns.Length; c++)
                 {
-                    var candidates = columnCandidates[c];
+                    var candidates = columns[c].candidates;
+                    string header = columns[c].header;
                     SchedulableField matchedSf = null;
 
                     foreach (var sf in schedulableFields)
@@ -945,16 +947,15 @@ namespace BCCPlugIn
                     if (matchedSf != null)
                     {
                         ScheduleField field = definition.AddField(matchedSf);
+                        try { field.ColumnHeading = header; } catch { }
                         addedFieldsCount++;
 
                         if (c == 0) fieldSpaceNumber = field;
-                        if (c == 3) fieldSpaceName = field;
+                        if (c == 3) fieldSpaceName   = field;
                         if (c == 4) fieldDesignation = field;
 
                         if (c == 8 || c == 14) // Area or HeatLoss
-                        {
                             field.DisplayType = ScheduleFieldDisplayType.Totals;
-                        }
                     }
                     else
                     {
