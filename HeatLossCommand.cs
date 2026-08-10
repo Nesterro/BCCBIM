@@ -73,17 +73,22 @@ namespace BCCPlugIn
 
                     HeatLossCalculationResult calculationResult = new HeatLossCalculationResult();
 
-                    // PHASE 1: Create and bind project parameters in a dedicated transaction (COMMITTED BEFORE CUBE PLACEMENT)
-                    progress.UpdateProgress("Этап 1: Добавление проектных параметров в файл Revit...", 10.0);
+                    // PHASE 0: Load/Create shared parameter definitions OUTSIDE ANY TRANSACTION
+                    // (Revit API forbids calling OpenSharedParameterFile or changing SharedParametersFilename inside an active Transaction)
+                    progress.UpdateProgress("Подготовка определений параметров...", 5.0);
+                    var definitions = engine.GetOrCreateHeatLossDefinitions(calculationResult);
+
+                    // PHASE 1: Bind project parameters in Transaction 1 (COMMITTED BEFORE CUBE PLACEMENT)
+                    progress.UpdateProgress("Этап 1: Добавление проектных параметров в файл Revit...", 15.0);
                     using (Transaction trans1 = new Transaction(doc, "BIMBCC Теплопотери - Создание проектных параметров"))
                     {
                         trans1.Start();
-                        engine.EnsureHeatLossProjectParametersExist(calculationResult);
+                        engine.BindHeatLossProjectParameters(definitions, calculationResult);
                         trans1.Commit();
                     }
 
                     // PHASE 2: Geometry analysis, cube placement, parameter writing, schedule generation
-                    progress.UpdateProgress("Этап 2: Расстановка маркеров и формирование спецификации...", 20.0);
+                    progress.UpdateProgress("Этап 2: Расстановка маркеров и формирование спецификации...", 25.0);
                     using (Transaction trans2 = new Transaction(doc, "BIMBCC Теплопотери - Расстановка маркеров и спецификация"))
                     {
                         trans2.Start();
@@ -101,7 +106,7 @@ namespace BCCPlugIn
                             window.ExportCsv,
                             window.CsvExportPath,
                             calculationResult,
-                            (msg, pct) => progress.UpdateProgress(msg, 20.0 + (pct * 0.8))
+                            (msg, pct) => progress.UpdateProgress(msg, 25.0 + (pct * 0.75))
                         );
 
                         trans2.Commit();

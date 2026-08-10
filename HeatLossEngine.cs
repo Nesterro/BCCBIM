@@ -123,30 +123,20 @@ namespace BCCPlugIn
             return collector.ToList();
         }
 
-        // STEP 1: Create project parameters for OST_GenericModel in Transaction 1
-        public void EnsureHeatLossProjectParametersExist(HeatLossCalculationResult result)
+        // MUST RUN OUTSIDE ANY TRANSACTION
+        public List<ExternalDefinition> GetOrCreateHeatLossDefinitions(HeatLossCalculationResult result)
         {
+            List<ExternalDefinition> definitions = new List<ExternalDefinition>();
             string origSharedFile = null;
+
             try
             {
-                Category genModelCat = _doc.Settings.Categories.get_Item(BuiltInCategory.OST_GenericModel);
-                if (genModelCat == null || !genModelCat.AllowsBoundParameters)
-                {
-                    result?.Logs.Add("Категория Обобщенные модели недоступна для привязки параметров.");
-                    return;
-                }
-
-                CategorySet catSet = _doc.Application.Create.NewCategorySet();
-                catSet.Insert(genModelCat);
-                InstanceBinding binding = _doc.Application.Create.NewInstanceBinding(catSet);
-
                 try { origSharedFile = _doc.Application.SharedParametersFilename; } catch { }
 
                 string tempDir = @"C:\ProgramData\BIMBCC";
                 if (!Directory.Exists(tempDir)) Directory.CreateDirectory(tempDir);
                 string tempSharedFile = Path.Combine(tempDir, "BIMBCC_HeatLoss_Params.txt");
 
-                // Write EXACT valid Revit Shared Parameter file format with UTF-16 LE encoding
                 StringBuilder sb = new StringBuilder();
                 sb.AppendLine("# This is a Revit shared parameter file.");
                 sb.AppendLine("# Do not edit manually.");
@@ -185,58 +175,40 @@ namespace BCCPlugIn
                 _doc.Application.SharedParametersFilename = tempSharedFile;
                 DefinitionFile defFile = _doc.Application.OpenSharedParameterFile();
 
-                if (defFile == null)
+                if (defFile != null)
                 {
-                    result?.Logs.Add("Не удалось открыть созданный ФОП файл.");
-                    return;
-                }
-
-                DefinitionGroup group = defFile.Groups.get_Item("BIMBCC_Теплопотери");
-                if (group == null)
-                {
-                    group = defFile.Groups.Create("BIMBCC_Теплопотери");
-                }
-
-                int boundCount = 0;
-                foreach (var p in paramsDef)
-                {
-                    Definition def = group.Definitions.get_Item(p.name);
-                    if (def == null)
+                    DefinitionGroup group = defFile.Groups.get_Item("BIMBCC_Теплопотери") ?? defFile.Groups.Create("BIMBCC_Теплопотери");
+                    if (group != null)
                     {
-                        try
+                        foreach (var p in paramsDef)
                         {
-                            ExternalDefinitionCreationOptions opt = new ExternalDefinitionCreationOptions(p.name, p.forgeType)
+                            Definition def = group.Definitions.get_Item(p.name);
+                            if (def == null)
                             {
-                                Description = p.desc,
-                                UserModifiable = true,
-                                Visible = true
-                            };
-                            def = group.Definitions.Create(opt);
-                        }
-                        catch { }
-                    }
+                                try
+                                {
+                                    ExternalDefinitionCreationOptions opt = new ExternalDefinitionCreationOptions(p.name, p.forgeType)
+                                    {
+                                        Description = p.desc,
+                                        UserModifiable = true,
+                                        Visible = true
+                                    };
+                                    def = group.Definitions.Create(opt);
+                                }
+                                catch { }
+                            }
 
-                    if (def != null)
-                    {
-                        bool ok = _doc.ParameterBindings.Insert(def, binding, BuiltInParameterGroup.PG_DATA);
-                        if (!ok)
-                        {
-                            ok = _doc.ParameterBindings.ReInsert(def, binding, BuiltInParameterGroup.PG_DATA);
+                            if (def is ExternalDefinition extDef)
+                            {
+                                definitions.Add(extDef);
+                            }
                         }
-                        if (ok) boundCount++;
-                    }
-                    else
-                    {
-                        result?.Logs.Add($"Не удалось получить определение для {p.name}");
                     }
                 }
-
-                result?.Logs.Add($"Этап 1: Добавлено проектных параметров к Обобщенным моделям: {boundCount} из 15.");
-                _doc.Regenerate();
             }
             catch (Exception ex)
             {
-                result?.Logs.Add($"Этап 1: Ошибка при добавлении параметров: {ex.Message}");
+                result?.Logs.Add($"Подготовка параметров ФОП: {ex.Message}");
             }
             finally
             {
@@ -248,6 +220,50 @@ namespace BCCPlugIn
                     }
                 }
                 catch { }
+            }
+
+            return definitions;
+        }
+
+        // MUST RUN INSIDE TRANSACTION 1
+        public void BindHeatLossProjectParameters(List<ExternalDefinition> definitions, HeatLossCalculationResult result)
+        {
+            if (definitions == null || definitions.Count == 0)
+            {
+                result?.Logs.Add("Этап 1: Нет определений параметров для привязки.");
+                return;
+            }
+
+            try
+            {
+                Category genModelCat = _doc.Settings.Categories.get_Item(BuiltInCategory.OST_GenericModel);
+                if (genModelCat == null || !genModelCat.AllowsBoundParameters)
+                {
+                    result?.Logs.Add("Категория Обобщенные модели недоступна для привязки параметров.");
+                    return;
+                }
+
+                CategorySet catSet = _doc.Application.Create.NewCategorySet();
+                catSet.Insert(genModelCat);
+                InstanceBinding binding = _doc.Application.Create.NewInstanceBinding(catSet);
+
+                int boundCount = 0;
+                foreach (ExternalDefinition extDef in definitions)
+                {
+                    bool ok = _doc.ParameterBindings.Insert(extDef, binding, BuiltInParameterGroup.PG_DATA);
+                    if (!ok)
+                    {
+                        ok = _doc.ParameterBindings.ReInsert(extDef, binding, BuiltInParameterGroup.PG_DATA);
+                    }
+                    if (ok) boundCount++;
+                }
+
+                result?.Logs.Add($"Этап 1: Добавлено проектных параметров к Обобщенным моделям: {boundCount} из {definitions.Count}.");
+                _doc.Regenerate();
+            }
+            catch (Exception ex)
+            {
+                result?.Logs.Add($"Этап 1: Ошибка при привязке параметров: {ex.Message}");
             }
         }
 
