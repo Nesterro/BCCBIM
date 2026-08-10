@@ -16,6 +16,7 @@ namespace BCCPlugIn
         public double AreaSqMeters { get; set; }
         public ElementId BoundingElementId { get; set; }
         public string BoundingCategoryName { get; set; }
+        public string ElementName { get; set; }
     }
 
     public class HeatLossCalculationResult
@@ -35,9 +36,6 @@ namespace BCCPlugIn
             _doc = doc ?? throw new ArgumentNullException(nameof(doc));
         }
 
-        /// <summary>
-        /// Collect all Revit link instances in the document.
-        /// </summary>
         public List<RevitLinkInstance> GetRevitLinkInstances()
         {
             return new FilteredElementCollector(_doc)
@@ -47,9 +45,6 @@ namespace BCCPlugIn
                 .ToList();
         }
 
-        /// <summary>
-        /// Collect all Generic Model family symbols suitable for cube placement.
-        /// </summary>
         public List<FamilySymbol> GetAvailableCubeSymbols()
         {
             return new FilteredElementCollector(_doc)
@@ -61,9 +56,6 @@ namespace BCCPlugIn
                 .ToList();
         }
 
-        /// <summary>
-        /// Collect target spaces in document based on filter selection.
-        /// </summary>
         public List<Space> GetTargetSpaces(string scopeMode, List<ElementId> selectedSpaceIds, ElementId levelId)
         {
             var collector = new FilteredElementCollector(_doc)
@@ -85,9 +77,6 @@ namespace BCCPlugIn
             return collector.ToList();
         }
 
-        /// <summary>
-        /// Main execution method: calculates boundary subfaces and places cube family instances in spaces.
-        /// </summary>
         public HeatLossCalculationResult ProcessSpaces(
             List<Space> spaces,
             FamilySymbol cubeSymbol,
@@ -112,14 +101,12 @@ namespace BCCPlugIn
                 return result;
             }
 
-            // Ensure cube symbol is active
             if (!cubeSymbol.IsActive)
             {
                 cubeSymbol.Activate();
                 _doc.Regenerate();
             }
 
-            // Optional cleanup of previously placed cubes
             if (deleteExistingCubes)
             {
                 var existingCubes = new FilteredElementCollector(_doc)
@@ -139,14 +126,13 @@ namespace BCCPlugIn
             }
 
             SpatialElementGeometryCalculator calculator = new SpatialElementGeometryCalculator(_doc);
-
             int totalSpaces = spaces.Count;
 
             for (int i = 0; i < totalSpaces; i++)
             {
                 var space = spaces[i];
                 double progressPct = ((double)(i + 1) / totalSpaces) * 100.0;
-                progressCallback?.Invoke($"Анализ пространства {i + 1} из {totalSpaces}: {space.Name} ({space.Number})...", progressPct);
+                progressCallback?.Invoke($"Анализ помещения/пространства {i + 1} из {totalSpaces}: {space.Name} ({space.Number})...", progressPct);
 
                 List<HeatLossBoundaryItem> items = ExtractBoundaryItemsForSpace(space, calculator, selectedLinkInstance, linkedParamName);
 
@@ -157,7 +143,6 @@ namespace BCCPlugIn
 
                 result.SpacesProcessedCount++;
 
-                // Place cubes inside space
                 XYZ spaceCenter = GetSpaceCentroid(space);
                 Level spaceLevel = _doc.GetElement(space.LevelId) as Level;
 
@@ -169,7 +154,6 @@ namespace BCCPlugIn
                     int row = cubeIndex / cols;
                     int col = cubeIndex % cols;
 
-                    // Offset position by 1.5 ft (~450 mm) grid to avoid overlap
                     double offsetX = (col - (cols - 1) / 2.0) * 1.5;
                     double offsetY = (row - (items.Count / cols) / 2.0) * 1.5;
 
@@ -184,7 +168,6 @@ namespace BCCPlugIn
                     {
                         result.CubesPlacedCount++;
 
-                        // Associate level parameter if available
                         if (spaceLevel != null)
                         {
                             Parameter pLevel = instance.get_Parameter(BuiltInParameter.FAMILY_LEVEL_PARAM)
@@ -195,37 +178,14 @@ namespace BCCPlugIn
                             }
                         }
 
-                        // Write designation parameter (e.g. ADSK_Обозначение)
-                        if (!string.IsNullOrEmpty(targetDesignationParamName))
-                        {
-                            Parameter pDesig = instance.LookupParameter(targetDesignationParamName);
-                            if (pDesig != null && !pDesig.IsReadOnly)
-                            {
-                                if (pDesig.StorageType == StorageType.String)
-                                {
-                                    pDesig.Set(item.Designation);
-                                }
-                            }
-                        }
+                        // Write designation parameter
+                        WriteDesignationToCube(instance, item.Designation, targetDesignationParamName);
 
-                        // Write area parameter (e.g. ADSK_Площадь / Площадь)
-                        if (!string.IsNullOrEmpty(targetAreaParamName))
-                        {
-                            Parameter pArea = instance.LookupParameter(targetAreaParamName);
-                            if (pArea != null && !pArea.IsReadOnly)
-                            {
-                                if (pArea.StorageType == StorageType.Double)
-                                {
-                                    // Internal units are sq feet. Convert sq meters to internal units: sqM / 0.09290304
-                                    double internalArea = UnitUtils.ConvertToInternalUnits(item.AreaSqMeters, UnitTypeId.SquareMeters);
-                                    pArea.Set(internalArea);
-                                }
-                                else if (pArea.StorageType == StorageType.String)
-                                {
-                                    pArea.Set(item.AreaSqMeters.ToString("F2"));
-                                }
-                            }
-                        }
+                        // Write area parameter
+                        WriteAreaToCube(instance, item.AreaSqMeters, targetAreaParamName);
+
+                        // Write space info parameters if present on cube
+                        WriteSpaceInfoToCube(instance, space);
                     }
 
                     cubeIndex++;
@@ -236,23 +196,21 @@ namespace BCCPlugIn
             return result;
         }
 
-        /// <summary>
-        /// Extracts bounding element items and calculates surface areas for a single space.
-        /// </summary>
         private List<HeatLossBoundaryItem> ExtractBoundaryItemsForSpace(
             Space space,
             SpatialElementGeometryCalculator calculator,
             RevitLinkInstance targetLinkInstance,
             string linkedParamName)
         {
-            var boundaryMap = new Dictionary<string, HeatLossBoundaryItem>();
+            var boundaryItems = new List<HeatLossBoundaryItem>();
+            var designationMap = new Dictionary<string, HeatLossBoundaryItem>();
 
             try
             {
                 SpatialElementGeometryResults geomResults = calculator.CalculateSpatialElementGeometry(space);
                 Solid spaceSolid = geomResults.GetGeometry();
 
-                if (spaceSolid == null || spaceSolid.Faces.Size == 0) return new List<HeatLossBoundaryItem>();
+                if (spaceSolid == null || spaceSolid.Faces.Size == 0) return boundaryItems;
 
                 foreach (Face face in spaceSolid.Faces)
                 {
@@ -272,17 +230,17 @@ namespace BCCPlugIn
                         if (boundingElementId == null) continue;
 
                         Element boundingElement = null;
+                        Document linkDoc = null;
 
-                        // Check if boundary element is from linked model
                         if (boundingElementId.LinkInstanceId != ElementId.InvalidElementId)
                         {
                             if (targetLinkInstance != null && boundingElementId.LinkInstanceId != targetLinkInstance.Id)
                             {
-                                continue; // Skip links that user did not select
+                                continue;
                             }
 
                             RevitLinkInstance linkInst = _doc.GetElement(boundingElementId.LinkInstanceId) as RevitLinkInstance;
-                            Document linkDoc = linkInst?.GetLinkDocument();
+                            linkDoc = linkInst?.GetLinkDocument();
                             if (linkDoc != null)
                             {
                                 boundingElement = linkDoc.GetElement(boundingElementId.LinkedElementId);
@@ -291,72 +249,181 @@ namespace BCCPlugIn
                         else if (boundingElementId.HostElementId != ElementId.InvalidElementId)
                         {
                             boundingElement = _doc.GetElement(boundingElementId.HostElementId);
+                            linkDoc = _doc;
                         }
 
                         if (boundingElement == null) continue;
 
-                        // Read ADSK_Обозначение (or specified parameter)
-                        string designation = GetElementDesignation(boundingElement, linkedParamName);
-                        if (string.IsNullOrWhiteSpace(designation)) continue;
+                        // Check designation of the host wall / boundary element
+                        string wallDesignation = GetElementDesignation(boundingElement, linkedParamName);
 
-                        designation = designation.Trim();
+                        // If element is a Wall, check for hosted windows & doors inserts inside wall!
+                        double insertsTotalAreaSqM = 0.0;
 
-                        // Aggregate area per designation within this space
-                        if (boundaryMap.ContainsKey(designation))
+                        if (boundingElement is Wall wall && linkDoc != null)
                         {
-                            boundaryMap[designation].AreaSqMeters += areaSqM;
-                        }
-                        else
-                        {
-                            boundaryMap[designation] = new HeatLossBoundaryItem
+                            IList<ElementId> insertIds = wall.FindInserts(true, false, false, false);
+                            foreach (ElementId insertId in insertIds)
                             {
-                                SpaceId = space.Id,
-                                SpaceName = space.Name,
-                                SpaceNumber = space.Number,
-                                Designation = designation,
-                                AreaSqMeters = areaSqM,
-                                BoundingElementId = boundingElement.Id,
-                                BoundingCategoryName = boundingElement.Category?.Name ?? "Элемент"
-                            };
+                                Element insertElem = linkDoc.GetElement(insertId);
+                                if (insertElem == null) continue;
+
+                                string insertDesignation = GetElementDesignation(insertElem, linkedParamName);
+                                if (string.IsNullOrWhiteSpace(insertDesignation)) continue;
+
+                                double insertAreaSqM = GetInsertAreaSqMeters(insertElem);
+                                if (insertAreaSqM > 0.001)
+                                {
+                                    insertsTotalAreaSqM += insertAreaSqM;
+                                    AddOrAggregateItem(designationMap, space, insertDesignation, insertAreaSqM, insertElem);
+                                }
+                            }
+                        }
+
+                        // Add main wall/boundary element if designation exists
+                        if (!string.IsNullOrWhiteSpace(wallDesignation))
+                        {
+                            double netAreaSqM = Math.Max(0.0, areaSqM - insertsTotalAreaSqM);
+                            if (netAreaSqM > 0.001)
+                            {
+                                AddOrAggregateItem(designationMap, space, wallDesignation, netAreaSqM, boundingElement);
+                            }
                         }
                     }
                 }
             }
             catch
             {
-                // Ignore single space geometry calculation exceptions
+                // Ignore individual space geometry errors
             }
 
-            return boundaryMap.Values.ToList();
+            return designationMap.Values.ToList();
         }
 
-        /// <summary>
-        /// Reads designation parameter value from element (checking instance parameter first, then type parameter).
-        /// </summary>
+        private void AddOrAggregateItem(
+            Dictionary<string, HeatLossBoundaryItem> map,
+            Space space,
+            string designation,
+            double areaSqM,
+            Element element)
+        {
+            designation = designation.Trim();
+            if (map.ContainsKey(designation))
+            {
+                map[designation].AreaSqMeters += areaSqM;
+            }
+            else
+            {
+                map[designation] = new HeatLossBoundaryItem
+                {
+                    SpaceId = space.Id,
+                    SpaceName = space.Name,
+                    SpaceNumber = space.Number,
+                    Designation = designation,
+                    AreaSqMeters = areaSqM,
+                    BoundingElementId = element.Id,
+                    BoundingCategoryName = element.Category?.Name ?? "Элемент",
+                    ElementName = element.Name
+                };
+            }
+        }
+
+        private double GetInsertAreaSqMeters(Element insertElem)
+        {
+            double widthFt = GetParamDoubleValue(insertElem, "Ширина", "Width", "ADSK_Размер_Ширина");
+            double heightFt = GetParamDoubleValue(insertElem, "Высота", "Height", "ADSK_Размер_Высота");
+
+            if (widthFt > 0 && heightFt > 0)
+            {
+                double areaSqFt = widthFt * heightFt;
+                return UnitUtils.ConvertFromInternalUnits(areaSqFt, UnitTypeId.SquareMeters);
+            }
+
+            BoundingBoxXYZ bbox = insertElem.get_BoundingBox(null);
+            if (bbox != null)
+            {
+                double dx = Math.Abs(bbox.Max.X - bbox.Min.X);
+                double dy = Math.Abs(bbox.Max.Y - bbox.Min.Y);
+                double dz = Math.Abs(bbox.Max.Z - bbox.Min.Z);
+                double span = Math.Max(dx, dy);
+                double areaSqFt = span * dz;
+                return UnitUtils.ConvertFromInternalUnits(areaSqFt, UnitTypeId.SquareMeters);
+            }
+
+            return 0.0;
+        }
+
+        private double GetParamDoubleValue(Element element, params string[] paramNames)
+        {
+            if (element == null) return 0.0;
+
+            foreach (string name in paramNames)
+            {
+                Parameter p = element.LookupParameter(name);
+                if (p != null && p.HasValue && p.StorageType == StorageType.Double)
+                {
+                    return p.AsDouble();
+                }
+
+                // Check type parameter
+                ElementId typeId = element.GetTypeId();
+                if (typeId != null && typeId != ElementId.InvalidElementId)
+                {
+                    Element typeElem = element.Document.GetElement(typeId);
+                    if (typeElem != null)
+                    {
+                        Parameter tp = typeElem.LookupParameter(name);
+                        if (tp != null && tp.HasValue && tp.StorageType == StorageType.Double)
+                        {
+                            return tp.AsDouble();
+                        }
+                    }
+                }
+            }
+
+            return 0.0;
+        }
+
         private string GetElementDesignation(Element element, string paramName)
         {
             if (element == null) return null;
 
-            // 1. Instance parameter
-            Parameter param = element.LookupParameter(paramName);
-            if (param != null && param.HasValue)
+            string[] candidates = new string[]
             {
-                string val = param.AsString();
-                if (!string.IsNullOrWhiteSpace(val)) return val;
-            }
+                paramName,
+                "ADSK_Обозначение",
+                "ADSK_Марка",
+                "Марка",
+                "Обозначение"
+            };
 
-            // 2. Type parameter
-            ElementId typeId = element.GetTypeId();
-            if (typeId != null && typeId != ElementId.InvalidElementId)
+            foreach (string candidate in candidates)
             {
-                Element typeElem = element.Document.GetElement(typeId);
-                if (typeElem != null)
+                if (string.IsNullOrWhiteSpace(candidate)) continue;
+
+                // Instance param
+                Parameter param = element.LookupParameter(candidate);
+                if (param != null && param.HasValue)
                 {
-                    Parameter typeParam = typeElem.LookupParameter(paramName);
-                    if (typeParam != null && typeParam.HasValue)
+                    string val = param.AsString();
+                    if (string.IsNullOrWhiteSpace(val)) val = param.AsValueString();
+                    if (!string.IsNullOrWhiteSpace(val)) return val;
+                }
+
+                // Type param
+                ElementId typeId = element.GetTypeId();
+                if (typeId != null && typeId != ElementId.InvalidElementId)
+                {
+                    Element typeElem = element.Document.GetElement(typeId);
+                    if (typeElem != null)
                     {
-                        string val = typeParam.AsString();
-                        if (!string.IsNullOrWhiteSpace(val)) return val;
+                        Parameter typeParam = typeElem.LookupParameter(candidate);
+                        if (typeParam != null && typeParam.HasValue)
+                        {
+                            string val = typeParam.AsString();
+                            if (string.IsNullOrWhiteSpace(val)) val = typeParam.AsValueString();
+                            if (!string.IsNullOrWhiteSpace(val)) return val;
+                        }
                     }
                 }
             }
@@ -364,9 +431,86 @@ namespace BCCPlugIn
             return null;
         }
 
-        /// <summary>
-        /// Computes 3D centroid of a space.
-        /// </summary>
+        private void WriteDesignationToCube(FamilyInstance cube, string designation, string userParamName)
+        {
+            string[] candidates = new string[]
+            {
+                userParamName,
+                "ADSK_Обозначение",
+                "ADSK_Марка",
+                "Марка",
+                "Обозначение",
+                "Комментарии"
+            };
+
+            foreach (string candidate in candidates)
+            {
+                if (string.IsNullOrWhiteSpace(candidate)) continue;
+
+                Parameter p = cube.LookupParameter(candidate);
+                if (p != null && !p.IsReadOnly && p.StorageType == StorageType.String)
+                {
+                    p.Set(designation);
+                    return;
+                }
+            }
+
+            // Fallback to BuiltInParameter.ALL_MODEL_MARK
+            Parameter pMark = cube.get_Parameter(BuiltInParameter.ALL_MODEL_MARK);
+            if (pMark != null && !pMark.IsReadOnly && pMark.StorageType == StorageType.String)
+            {
+                pMark.Set(designation);
+            }
+        }
+
+        private void WriteAreaToCube(FamilyInstance cube, double areaSqM, string userParamName)
+        {
+            string[] candidates = new string[]
+            {
+                userParamName,
+                "ADSK_Площадь",
+                "Площадь",
+                "ADSK_Значение",
+                "Значение"
+            };
+
+            foreach (string candidate in candidates)
+            {
+                if (string.IsNullOrWhiteSpace(candidate)) continue;
+
+                Parameter p = cube.LookupParameter(candidate);
+                if (p != null && !p.IsReadOnly)
+                {
+                    if (p.StorageType == StorageType.Double)
+                    {
+                        double internalArea = UnitUtils.ConvertToInternalUnits(areaSqM, UnitTypeId.SquareMeters);
+                        p.Set(internalArea);
+                        return;
+                    }
+                    else if (p.StorageType == StorageType.String)
+                    {
+                        p.Set(areaSqM.ToString("F2"));
+                        return;
+                    }
+                }
+            }
+        }
+
+        private void WriteSpaceInfoToCube(FamilyInstance cube, Space space)
+        {
+            Parameter pSpaceName = cube.LookupParameter("Имя пространства") ?? cube.LookupParameter("ADSK_Имя помещения");
+            if (pSpaceName != null && !pSpaceName.IsReadOnly && pSpaceName.StorageType == StorageType.String)
+            {
+                pSpaceName.Set(space.Name);
+            }
+
+            Parameter pSpaceNumber = cube.LookupParameter("Номер пространства") ?? cube.LookupParameter("ADSK_Номер помещения");
+            if (pSpaceNumber != null && !pSpaceNumber.IsReadOnly && pSpaceNumber.StorageType == StorageType.String)
+            {
+                pSpaceNumber.Set(space.Number);
+            }
+        }
+
         private XYZ GetSpaceCentroid(Space space)
         {
             LocationPoint locPoint = space.Location as LocationPoint;
