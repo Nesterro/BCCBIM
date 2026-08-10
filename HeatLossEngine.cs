@@ -519,16 +519,51 @@ namespace BCCPlugIn
 
         private void WriteSpaceInfoToCube(FamilyInstance cube, Space space)
         {
-            Parameter pSpaceName = cube.LookupParameter("Имя пространства") ?? cube.LookupParameter("ADSK_Имя помещения");
-            if (pSpaceName != null && !pSpaceName.IsReadOnly && pSpaceName.StorageType == StorageType.String)
+            if (cube == null || space == null) return;
+
+            // Room / Space Number
+            string[] numberCandidates = new string[]
             {
-                pSpaceName.Set(space.Name);
+                "ADSK_Номер помещения",
+                "ADSK_Номер пространства",
+                "Номер помещения",
+                "Номер пространства",
+                "Номер_помещения",
+                "Номер_пространства",
+                "Номер"
+            };
+
+            foreach (string candidate in numberCandidates)
+            {
+                Parameter p = cube.LookupParameter(candidate);
+                if (p != null && !p.IsReadOnly && p.StorageType == StorageType.String)
+                {
+                    p.Set(space.Number ?? "");
+                    break;
+                }
             }
 
-            Parameter pSpaceNumber = cube.LookupParameter("Номер пространства") ?? cube.LookupParameter("ADSK_Номер помещения");
-            if (pSpaceNumber != null && !pSpaceNumber.IsReadOnly && pSpaceNumber.StorageType == StorageType.String)
+            // Room / Space Name
+            string[] nameCandidates = new string[]
             {
-                pSpaceNumber.Set(space.Number);
+                "ADSK_Имя помещения",
+                "ADSK_Имя пространства",
+                "Имя помещения",
+                "Имя пространства",
+                "Имя_помещения",
+                "Имя_пространства",
+                "Имя",
+                "Наименование"
+            };
+
+            foreach (string candidate in nameCandidates)
+            {
+                Parameter p = cube.LookupParameter(candidate);
+                if (p != null && !p.IsReadOnly && p.StorageType == StorageType.String)
+                {
+                    p.Set(space.Name ?? "");
+                    break;
+                }
             }
         }
 
@@ -554,24 +589,81 @@ namespace BCCPlugIn
                 ScheduleDefinition definition = newSchedule.Definition;
                 var schedulableFields = definition.GetSchedulableFields();
 
-                // Add fields to schedule
+                ScheduleField fieldNumber = null;
+                ScheduleField fieldName = null;
+                ScheduleField fieldDesignation = null;
+                ScheduleField fieldArea = null;
+
+                // Add ONLY required clean parameters (Room Number, Room Name, Designation, Area, Count)
                 foreach (var sf in schedulableFields)
                 {
                     string fName = sf.GetName(_doc);
+
+                    // Skip unnecessary parameters (Family, Type, Level, Category, Image, etc.)
                     if (fName.IndexOf("Семейство", StringComparison.OrdinalIgnoreCase) >= 0 ||
                         fName.IndexOf("Тип", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        fName.IndexOf(targetDesignationParamName, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        fName.IndexOf(targetAreaParamName, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        fName.IndexOf("Обозначение", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        fName.IndexOf("Площадь", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        fName.IndexOf("Число", StringComparison.OrdinalIgnoreCase) >= 0)
+                        fName.IndexOf("Категория", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        fName.IndexOf("Уровень", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        fName.IndexOf("Изображение", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        fName.IndexOf("Комментарии", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
-                        ScheduleField field = definition.AddField(sf);
-                        if (fName.IndexOf("Площадь", StringComparison.OrdinalIgnoreCase) >= 0)
+                        continue;
+                    }
+
+                    if (fName.IndexOf("Номер помещения", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        fName.IndexOf("Номер пространства", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        fName.IndexOf("ADSK_Номер", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        if (fieldNumber == null) fieldNumber = definition.AddField(sf);
+                    }
+                    else if (fName.IndexOf("Имя помещения", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                             fName.IndexOf("Имя пространства", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                             fName.IndexOf("ADSK_Имя", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        if (fieldName == null) fieldName = definition.AddField(sf);
+                    }
+                    else if (fName.IndexOf(targetDesignationParamName, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                             fName.IndexOf("ADSK_Обозначение", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                             fName.IndexOf("Марка", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                             fName.IndexOf("Обозначение", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        if (fieldDesignation == null) fieldDesignation = definition.AddField(sf);
+                    }
+                    else if (fName.IndexOf(targetAreaParamName, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                             fName.IndexOf("ADSK_Площадь", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                             fName.IndexOf("Площадь", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        if (fieldArea == null)
                         {
-                            field.DisplayType = ScheduleFieldDisplayType.Totals;
+                            fieldArea = definition.AddField(sf);
+                            fieldArea.DisplayType = ScheduleFieldDisplayType.Totals;
                         }
                     }
+                }
+
+                // Add Count field
+                var countSf = schedulableFields.FirstOrDefault(sf =>
+                    sf.GetName(_doc).IndexOf("Число", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    sf.GetName(_doc).IndexOf("Количество", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    sf.GetName(_doc).IndexOf("Count", StringComparison.OrdinalIgnoreCase) >= 0);
+                if (countSf != null)
+                {
+                    definition.AddField(countSf);
+                }
+
+                // Grouping & Sorting by Room Number then Designation
+                if (fieldNumber != null)
+                {
+                    ScheduleSortGroupField sortGroupNumber = new ScheduleSortGroupField(fieldNumber.FieldId);
+                    sortGroupNumber.ShowHeader = true;
+                    sortGroupNumber.ShowBlankLine = true;
+                    definition.AddSortGroupField(sortGroupNumber);
+                }
+
+                if (fieldDesignation != null)
+                {
+                    ScheduleSortGroupField sortGroupDesig = new ScheduleSortGroupField(fieldDesignation.FieldId);
+                    definition.AddSortGroupField(sortGroupDesig);
                 }
 
                 return newSchedule;
