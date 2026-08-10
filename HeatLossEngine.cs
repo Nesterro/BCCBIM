@@ -147,10 +147,12 @@ namespace BCCPlugIn
                 if (!Directory.Exists(tempDir)) Directory.CreateDirectory(tempDir);
                 string bimbccFilePath = Path.Combine(tempDir, "BIMBCC_HeatLoss_SharedParams.txt");
 
-                // Write file as UTF-16 LE (Revit's required encoding for shared param files)
-                // Use explicit StreamWriter so we control BOM and line endings precisely
-                // All NAME fields are pure ASCII — Revit C++ parser cannot handle Cyrillic in NAME
-                using (var sw = new StreamWriter(bimbccFilePath, false, Encoding.Unicode))
+                // CRITICAL: Write as UTF-8 WITHOUT BOM (= pure ASCII for our ASCII content).
+                // Encoding.Unicode (UTF-16 LE) inserts null bytes after every ASCII char,
+                // which Revit's C++ ANSI parser interprets as end-of-string => readParamDatabase error.
+                // Delete any old cached file first so Revit reads the fresh one.
+                if (File.Exists(bimbccFilePath)) File.Delete(bimbccFilePath);
+                using (var sw = new StreamWriter(bimbccFilePath, false, new System.Text.UTF8Encoding(false)))
                 {
                     sw.WriteLine("# This is a Revit shared parameter file.");
                     sw.WriteLine("# Do not edit manually.");
