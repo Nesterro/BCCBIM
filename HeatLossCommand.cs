@@ -76,6 +76,9 @@ namespace BCCPlugIn
                             window.TargetDesignationParamName,
                             window.TargetAreaParamName,
                             window.DeleteExistingCubes,
+                            window.CreateSchedule,
+                            window.ExportCsv,
+                            window.CsvExportPath,
                             (msg, pct) => progress.UpdateProgress(msg, pct)
                         );
 

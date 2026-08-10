@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Text;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Mechanical;
 using Autodesk.Revit.DB.Structure;
@@ -24,6 +26,9 @@ namespace BCCPlugIn
         public int SpacesProcessedCount { get; set; }
         public int CubesPlacedCount { get; set; }
         public int DeletedCubesCount { get; set; }
+        public ViewSchedule CreatedSchedule { get; set; }
+        public string ExportedCsvPath { get; set; }
+        public List<HeatLossBoundaryItem> ExtractedItems { get; set; } = new List<HeatLossBoundaryItem>();
         public List<string> Logs { get; set; } = new List<string>();
     }
 
@@ -85,6 +90,9 @@ namespace BCCPlugIn
             string targetDesignationParamName,
             string targetAreaParamName,
             bool deleteExistingCubes,
+            bool createSchedule,
+            bool exportCsv,
+            string csvExportPath,
             Action<string, double> progressCallback = null)
         {
             var result = new HeatLossCalculationResult();
@@ -131,7 +139,7 @@ namespace BCCPlugIn
             for (int i = 0; i < totalSpaces; i++)
             {
                 var space = spaces[i];
-                double progressPct = ((double)(i + 1) / totalSpaces) * 100.0;
+                double progressPct = ((double)(i + 1) / totalSpaces) * 70.0;
                 progressCallback?.Invoke($"Анализ помещения/пространства {i + 1} из {totalSpaces}: {space.Name} ({space.Number})...", progressPct);
 
                 List<HeatLossBoundaryItem> items = ExtractBoundaryItemsForSpace(space, calculator, selectedLinkInstance, linkedParamName);
@@ -142,6 +150,7 @@ namespace BCCPlugIn
                 }
 
                 result.SpacesProcessedCount++;
+                result.ExtractedItems.AddRange(items);
 
                 XYZ spaceCenter = GetSpaceCentroid(space);
                 Level spaceLevel = _doc.GetElement(space.LevelId) as Level;
@@ -178,13 +187,8 @@ namespace BCCPlugIn
                             }
                         }
 
-                        // Write designation parameter
                         WriteDesignationToCube(instance, item.Designation, targetDesignationParamName);
-
-                        // Write area parameter
                         WriteAreaToCube(instance, item.AreaSqMeters, targetAreaParamName);
-
-                        // Write space info parameters if present on cube
                         WriteSpaceInfoToCube(instance, space);
                     }
 
@@ -193,6 +197,31 @@ namespace BCCPlugIn
             }
 
             result.Logs.Add($"Успешно обработано пространств: {result.SpacesProcessedCount}, расставлено кубиков: {result.CubesPlacedCount}.");
+
+            // Option 1: Create Revit ViewSchedule
+            if (createSchedule)
+            {
+                progressCallback?.Invoke("Формирование спецификации в Revit...", 80.0);
+                result.CreatedSchedule = CreateOrUpdateRevitSchedule(targetDesignationParamName, targetAreaParamName);
+                if (result.CreatedSchedule != null)
+                {
+                    result.Logs.Add($"Создана спецификация в Revit: '{result.CreatedSchedule.Name}'.");
+                }
+            }
+
+            // Option 2: Export to CSV / Excel report
+            if (exportCsv && !string.IsNullOrWhiteSpace(csvExportPath))
+            {
+                progressCallback?.Invoke("Экспорт отчёта в CSV/Excel...", 90.0);
+                string exportedPath = ExportToCsvReport(result.ExtractedItems, csvExportPath);
+                if (!string.IsNullOrEmpty(exportedPath))
+                {
+                    result.ExportedCsvPath = exportedPath;
+                    result.Logs.Add($"Отчёт сохранен в файл: {exportedPath}");
+                }
+            }
+
+            progressCallback?.Invoke("Готово!", 100.0);
             return result;
         }
 
@@ -254,10 +283,7 @@ namespace BCCPlugIn
 
                         if (boundingElement == null) continue;
 
-                        // Check designation of the host wall / boundary element
                         string wallDesignation = GetElementDesignation(boundingElement, linkedParamName);
-
-                        // If element is a Wall, check for hosted windows & doors inserts inside wall!
                         double insertsTotalAreaSqM = 0.0;
 
                         if (boundingElement is Wall wall && linkDoc != null)
@@ -280,7 +306,6 @@ namespace BCCPlugIn
                             }
                         }
 
-                        // Add main wall/boundary element if designation exists
                         if (!string.IsNullOrWhiteSpace(wallDesignation))
                         {
                             double netAreaSqM = Math.Max(0.0, areaSqM - insertsTotalAreaSqM);
@@ -365,7 +390,6 @@ namespace BCCPlugIn
                     return p.AsDouble();
                 }
 
-                // Check type parameter
                 ElementId typeId = element.GetTypeId();
                 if (typeId != null && typeId != ElementId.InvalidElementId)
                 {
@@ -401,7 +425,6 @@ namespace BCCPlugIn
             {
                 if (string.IsNullOrWhiteSpace(candidate)) continue;
 
-                // Instance param
                 Parameter param = element.LookupParameter(candidate);
                 if (param != null && param.HasValue)
                 {
@@ -410,7 +433,6 @@ namespace BCCPlugIn
                     if (!string.IsNullOrWhiteSpace(val)) return val;
                 }
 
-                // Type param
                 ElementId typeId = element.GetTypeId();
                 if (typeId != null && typeId != ElementId.InvalidElementId)
                 {
@@ -455,7 +477,6 @@ namespace BCCPlugIn
                 }
             }
 
-            // Fallback to BuiltInParameter.ALL_MODEL_MARK
             Parameter pMark = cube.get_Parameter(BuiltInParameter.ALL_MODEL_MARK);
             if (pMark != null && !pMark.IsReadOnly && pMark.StorageType == StorageType.String)
             {
@@ -509,6 +530,91 @@ namespace BCCPlugIn
             {
                 pSpaceNumber.Set(space.Number);
             }
+        }
+
+        private ViewSchedule CreateOrUpdateRevitSchedule(string targetDesignationParamName, string targetAreaParamName)
+        {
+            try
+            {
+                string scheduleName = "Спецификация ограждающих конструкций (Теплопотери)";
+
+                ViewSchedule existingSchedule = new FilteredElementCollector(_doc)
+                    .OfClass(typeof(ViewSchedule))
+                    .Cast<ViewSchedule>()
+                    .FirstOrDefault(s => s.Name.Equals(scheduleName, StringComparison.OrdinalIgnoreCase));
+
+                if (existingSchedule != null)
+                {
+                    return existingSchedule;
+                }
+
+                ViewSchedule newSchedule = ViewSchedule.CreateSchedule(_doc, new ElementId(BuiltInCategory.OST_GenericModel));
+                newSchedule.Name = scheduleName;
+
+                ScheduleDefinition definition = newSchedule.Definition;
+                var schedulableFields = definition.GetSchedulableFields();
+
+                // Add fields to schedule
+                foreach (var sf in schedulableFields)
+                {
+                    string fName = sf.GetName(_doc);
+                    if (fName.IndexOf("Семейство", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        fName.IndexOf("Тип", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        fName.IndexOf(targetDesignationParamName, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        fName.IndexOf(targetAreaParamName, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        fName.IndexOf("Обозначение", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        fName.IndexOf("Площадь", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        fName.IndexOf("Число", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        ScheduleField field = definition.AddField(sf);
+                        if (fName.IndexOf("Площадь", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            field.DisplayType = ScheduleFieldDisplayType.Totals;
+                        }
+                    }
+                }
+
+                return newSchedule;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private string ExportToCsvReport(List<HeatLossBoundaryItem> items, string csvFilePath)
+        {
+            try
+            {
+                string dir = Path.GetDirectoryName(csvFilePath);
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+
+                StringBuilder sb = new StringBuilder();
+                sb.AppendLine("Номер помещения;Наименование помещения;Обозначение конструкции;Категория;Площадь (м2)");
+
+                foreach (var item in items)
+                {
+                    string line = $"{EscapeCsv(item.SpaceNumber)};{EscapeCsv(item.SpaceName)};{EscapeCsv(item.Designation)};{EscapeCsv(item.BoundingCategoryName)};{item.AreaSqMeters:F2}";
+                    sb.AppendLine(line);
+                }
+
+                File.WriteAllText(csvFilePath, sb.ToString(), Encoding.UTF8);
+                return csvFilePath;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private string EscapeCsv(string val)
+        {
+            if (string.IsNullOrEmpty(val)) return "";
+            if (val.Contains(";") || val.Contains("\"") || val.Contains("\n"))
+            {
+                return "\"" + val.Replace("\"", "\"\"") + "\"";
+            }
+            return val;
         }
 
         private XYZ GetSpaceCentroid(Space space)

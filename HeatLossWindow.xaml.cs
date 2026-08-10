@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Mechanical;
+using Microsoft.Win32;
 
 namespace BCCPlugIn
 {
@@ -21,6 +23,9 @@ namespace BCCPlugIn
         public string TargetDesignationParamName { get; private set; } = "ADSK_Обозначение";
         public string TargetAreaParamName { get; private set; } = "ADSK_Площадь";
         public bool DeleteExistingCubes { get; private set; } = true;
+        public bool CreateSchedule { get; private set; } = true;
+        public bool ExportCsv { get; private set; } = true;
+        public string CsvExportPath { get; private set; }
 
         public HeatLossWindow(Document doc, List<ElementId> selectedSpaceIds = null)
         {
@@ -85,7 +90,6 @@ namespace BCCPlugIn
 
             if (symbolDisplayItems.Count > 0)
             {
-                // Try to find default cube symbol containing "Кубик" or "Маркер"
                 var defaultCube = symbolDisplayItems.FirstOrDefault(s =>
                     s.Name.IndexOf("Кубик", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     s.Name.IndexOf("Маркер", StringComparison.OrdinalIgnoreCase) >= 0 ||
@@ -100,6 +104,18 @@ namespace BCCPlugIn
                     CubeSymbolComboBox.SelectedIndex = 0;
                 }
             }
+
+            // Set default CSV export path
+            string defaultFolder = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+            if (!string.IsNullOrEmpty(_doc.PathName))
+            {
+                try
+                {
+                    defaultFolder = Path.GetDirectoryName(_doc.PathName);
+                }
+                catch { }
+            }
+            CsvPathTextBox.Text = Path.Combine(defaultFolder, "Теплопотери_Ведомость.csv");
         }
 
         private void ScopeRadio_Changed(object sender, RoutedEventArgs e)
@@ -125,13 +141,35 @@ namespace BCCPlugIn
             }
         }
 
+        private void ExportCsv_Changed(object sender, RoutedEventArgs e)
+        {
+            if (CsvPathPanel != null)
+            {
+                CsvPathPanel.IsEnabled = ExportCsvCheckBox.IsChecked == true;
+            }
+        }
+
+        private void BrowseCsvPath_Click(object sender, RoutedEventArgs e)
+        {
+            SaveFileDialog dlg = new SaveFileDialog
+            {
+                Title = "Выберите место для сохранения ведомости теплопотерь",
+                Filter = "CSV Файлы (*.csv)|*.csv|Текстовые файлы (*.txt)|*.txt|Все файлы (*.*)|*.*",
+                FileName = "Теплопотери_Ведомость.csv"
+            };
+
+            if (dlg.ShowDialog() == true)
+            {
+                CsvPathTextBox.Text = dlg.FileName;
+            }
+        }
+
         private void Run_Click(object sender, RoutedEventArgs e)
         {
-            // Validate symbol selection
             var symbolItem = CubeSymbolComboBox.SelectedItem as SymbolDisplayItem;
             if (symbolItem == null || symbolItem.Symbol == null)
             {
-                MessageBox.Show("Пожалуйста, выберите типоразмер кубика-маркера из категории Обобощенные модели.",
+                MessageBox.Show("Пожалуйста, выберите типоразмер кубика-маркера из категории Обобщенные модели.",
                     "Внимание", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
@@ -156,10 +194,19 @@ namespace BCCPlugIn
             TargetDesignationParamName = TargetDesigParamTextBox.Text?.Trim();
             TargetAreaParamName = TargetAreaParamTextBox.Text?.Trim();
             DeleteExistingCubes = DeleteExistingCheckBox.IsChecked == true;
+            CreateSchedule = CreateScheduleCheckBox.IsChecked == true;
+            ExportCsv = ExportCsvCheckBox.IsChecked == true;
+            CsvExportPath = CsvPathTextBox.Text?.Trim();
 
             if (string.IsNullOrEmpty(LinkedParamName))
             {
                 MessageBox.Show("Укажите название параметра в связанной модели.", "Внимание", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            if (ExportCsv && string.IsNullOrEmpty(CsvExportPath))
+            {
+                MessageBox.Show("Укажите путь для сохранения файла ведомости CSV.", "Внимание", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
