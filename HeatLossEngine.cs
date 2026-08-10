@@ -79,21 +79,21 @@ namespace BCCPlugIn
 
         private static readonly (string name, ForgeTypeId specType, string description)[] HeatLossParameters = new[]
         {
-            ("ADSK_Номер помещения", SpecTypeId.String.Text, "Номер помещения/пространства"),
-            ("ADSK_Температура наружного воздуха", SpecTypeId.Number, "Температура наружного воздуха (°C)"),
-            ("ADSK_Температура помещения", SpecTypeId.Number, "Температура помещения (°C)"),
-            ("ADSK_Имя помещения", SpecTypeId.String.Text, "Наименование помещения/пространства"),
-            ("ADSK_Обозначение", SpecTypeId.String.Text, "Обозначение ограждающей конструкции"),
-            ("ADSK_Ориентация", SpecTypeId.String.Text, "Ориентация конструкции"),
-            ("ADSK_Длина", SpecTypeId.Length, "Длина конструкции (м)"),
-            ("ADSK_Высота", SpecTypeId.Length, "Высота конструкции (м)"),
-            ("ADSK_Площадь", SpecTypeId.Area, "Площадь конструкции (м²)"),
-            ("ADSK_Коэффициент_n", SpecTypeId.Number, "Коэффициент n"),
-            ("ADSK_Коэффициент_теплопередачи", SpecTypeId.Number, "Коэффициент теплопередачи k (Вт/(м²·°C))"),
-            ("ADSK_b1", SpecTypeId.Number, "Поправка на ориентацию b1"),
-            ("ADSK_b2", SpecTypeId.Number, "Поправка на угол b2"),
-            ("ADSK_Коэффициент_надбавки", SpecTypeId.Number, "Коэффициент надбавки (1+b1+b2)"),
-            ("ADSK_Теплопотери", SpecTypeId.Number, "Теплопотери Q (Вт)")
+            ("BIMBCC_Номер помещения", SpecTypeId.String.Text, "Номер помещения/пространства"),
+            ("BIMBCC_Температура наружного воздуха", SpecTypeId.Number, "Температура наружного воздуха (°C)"),
+            ("BIMBCC_Температура помещения", SpecTypeId.Number, "Температура помещения (°C)"),
+            ("BIMBCC_Имя помещения", SpecTypeId.String.Text, "Наименование помещения/пространства"),
+            ("BIMBCC_Обозначение", SpecTypeId.String.Text, "Обозначение ограждающей конструкции"),
+            ("BIMBCC_Ориентация", SpecTypeId.String.Text, "Ориентация конструкции"),
+            ("BIMBCC_Длина", SpecTypeId.Length, "Длина конструкции (м)"),
+            ("BIMBCC_Высота", SpecTypeId.Length, "Высота конструкции (м)"),
+            ("BIMBCC_Площадь", SpecTypeId.Area, "Площадь конструкции (м²)"),
+            ("BIMBCC_Коэффициент_n", SpecTypeId.Number, "Коэффициент n"),
+            ("BIMBCC_Коэффициент_теплопередачи", SpecTypeId.Number, "Коэффициент теплопередачи k (Вт/(м²·°C))"),
+            ("BIMBCC_b1", SpecTypeId.Number, "Поправка на ориентацию b1"),
+            ("BIMBCC_b2", SpecTypeId.Number, "Поправка на угол b2"),
+            ("BIMBCC_Коэффициент_надбавки", SpecTypeId.Number, "Коэффициент надбавки (1+b1+b2)"),
+            ("BIMBCC_Теплопотери", SpecTypeId.Number, "Теплопотери Q (Вт)")
         };
 
         public HeatLossEngine(Document doc)
@@ -176,7 +176,7 @@ namespace BCCPlugIn
                 _doc.Regenerate();
             }
 
-            // Ensure all 15 project parameters are bound to Generic Models in document
+            // Ensure all 15 BIMBCC project parameters are bound to Generic Models in document
             EnsureHeatLossProjectParametersExist();
 
             if (deleteExistingCubes)
@@ -605,6 +605,7 @@ namespace BCCPlugIn
             {
                 paramName,
                 "ADSK_Обозначение",
+                "BIMBCC_Обозначение",
                 "ADSK_Марка",
                 "Марка",
                 "Обозначение"
@@ -647,49 +648,49 @@ namespace BCCPlugIn
             if (cube == null || item == null) return;
 
             // 1. Номер помещения
-            SetCubeParamValue(cube, item.SpaceNumber, "ADSK_Номер помещения", "ADSK_Номер пространства", "Номер помещения", "Номер пространства", "Номер");
+            SetCubeParamValue(cube, item.SpaceNumber, "BIMBCC_Номер помещения", "ADSK_Номер помещения", "ADSK_Номер пространства", "Номер помещения", "Номер пространства", "Номер");
 
             // 2. Температура наружного воздуха
-            SetCubeParamValue(cube, item.OutdoorTemp, "ADSK_Температура наружного воздуха", "Температура наружного воздуха", "t_ext");
+            SetCubeParamValue(cube, item.OutdoorTemp, "BIMBCC_Температура наружного воздуха", "ADSK_Температура наружного воздуха", "Температура наружного воздуха", "t_ext");
 
             // 3. Температура помещения
-            SetCubeParamValue(cube, item.IndoorTemp, "ADSK_Температура помещения", "Температура помещения", "t_int");
+            SetCubeParamValue(cube, item.IndoorTemp, "BIMBCC_Температура помещения", "ADSK_Температура помещения", "Температура помещения", "t_int");
 
             // 4. Наименование помещения
-            SetCubeParamValue(cube, item.SpaceName, "ADSK_Имя помещения", "ADSK_Имя пространства", "Имя помещения", "Имя пространства", "Наименование", "Имя");
+            SetCubeParamValue(cube, item.SpaceName, "BIMBCC_Имя помещения", "ADSK_Имя помещения", "ADSK_Имя пространства", "Имя помещения", "Имя пространства", "Наименование", "Имя");
 
             // 5. Обозначение ограждающей конструкции
-            SetCubeParamValue(cube, item.Designation, userDesignationParam, "ADSK_Обозначение", "ADSK_Марка", "Марка", "Обозначение");
+            SetCubeParamValue(cube, item.Designation, userDesignationParam, "BIMBCC_Обозначение", "ADSK_Обозначение", "ADSK_Марка", "Марка", "Обозначение");
 
             // 6. Ориентация
-            SetCubeParamValue(cube, item.Orientation, "ADSK_Ориентация", "Ориентация");
+            SetCubeParamValue(cube, item.Orientation, "BIMBCC_Ориентация", "ADSK_Ориентация", "Ориентация");
 
             // 7. Длина конструкции
-            SetCubeParamValue(cube, item.LengthMeters, "ADSK_Длина", "Длина");
+            SetCubeParamValue(cube, item.LengthMeters, "BIMBCC_Длина", "ADSK_Длина", "Длина");
 
             // 8. Высота конструкции
-            SetCubeParamValue(cube, item.HeightMeters, "ADSK_Высота", "Высота");
+            SetCubeParamValue(cube, item.HeightMeters, "BIMBCC_Высота", "ADSK_Высота", "Высота");
 
             // 9. Площадь
-            SetCubeParamValue(cube, item.AreaSqMeters, userAreaParam, "ADSK_Площадь", "Площадь", "ADSK_Значение");
+            SetCubeParamValue(cube, item.AreaSqMeters, userAreaParam, "BIMBCC_Площадь", "ADSK_Площадь", "Площадь", "ADSK_Значение");
 
             // 10. Коэффициент n
-            SetCubeParamValue(cube, item.CoeffN, "ADSK_Коэффициент_n", "Коэффициент_n", "n");
+            SetCubeParamValue(cube, item.CoeffN, "BIMBCC_Коэффициент_n", "ADSK_Коэффициент_n", "Коэффициент_n", "n");
 
             // 11. Коэффициент теплопередачи k
-            SetCubeParamValue(cube, item.CoeffK, "ADSK_Коэффициент_теплопередачи", "Коэффициент_теплопередачи", "k");
+            SetCubeParamValue(cube, item.CoeffK, "BIMBCC_Коэффициент_теплопередачи", "ADSK_Коэффициент_теплопередачи", "Коэффициент_теплопередачи", "k");
 
             // 12. b1
-            SetCubeParamValue(cube, item.B1, "ADSK_b1", "b1");
+            SetCubeParamValue(cube, item.B1, "BIMBCC_b1", "ADSK_b1", "b1");
 
             // 13. b2
-            SetCubeParamValue(cube, item.B2, "ADSK_b2", "b2");
+            SetCubeParamValue(cube, item.B2, "BIMBCC_b2", "ADSK_b2", "b2");
 
             // 14. Коэффициент надбавки
-            SetCubeParamValue(cube, item.CoeffAllowance, "ADSK_Коэффициент_надбавки", "Коэффициент_надбавки", "Надбавка");
+            SetCubeParamValue(cube, item.CoeffAllowance, "BIMBCC_Коэффициент_надбавки", "ADSK_Коэффициент_надбавки", "Коэффициент_надбавки", "Надбавка");
 
             // 15. Теплопотери (Вт)
-            SetCubeParamValue(cube, item.HeatLossWatts, "ADSK_Теплопотери", "Теплопотери", "Q");
+            SetCubeParamValue(cube, item.HeatLossWatts, "BIMBCC_Теплопотери", "ADSK_Теплопотери", "Теплопотери", "Q");
         }
 
         private void SetCubeParamValue(FamilyInstance cube, string strValue, params string[] paramNames)
@@ -705,7 +706,7 @@ namespace BCCPlugIn
                 }
             }
 
-            if (paramNames.Contains("ADSK_Обозначение") || paramNames.Contains("Марка"))
+            if (paramNames.Contains("BIMBCC_Обозначение") || paramNames.Contains("ADSK_Обозначение") || paramNames.Contains("Марка"))
             {
                 Parameter pMark = cube.get_Parameter(BuiltInParameter.ALL_MODEL_MARK);
                 if (pMark != null && !pMark.IsReadOnly && pMark.StorageType == StorageType.String)
@@ -772,21 +773,21 @@ namespace BCCPlugIn
 
                 string[][] columnCandidates = new string[][]
                 {
-                    new string[] { "ADSK_Номер помещения", "Номер помещения" },
-                    new string[] { "ADSK_Температура наружного воздуха", "Температура наружного воздуха" },
-                    new string[] { "ADSK_Температура помещения", "Температура помещения" },
-                    new string[] { "ADSK_Имя помещения", "Имя помещения", "ADSK_Имя пространства", "Имя пространства" },
-                    new string[] { targetDesignationParamName, "ADSK_Обозначение", "Обозначение" },
-                    new string[] { "ADSK_Ориентация", "Ориентация" },
-                    new string[] { "ADSK_Длина", "Длина" },
-                    new string[] { "ADSK_Высота", "Высота" },
-                    new string[] { targetAreaParamName, "ADSK_Площадь", "Площадь" },
-                    new string[] { "ADSK_Коэффициент_n", "Коэффициент_n" },
-                    new string[] { "ADSK_Коэффициент_теплопередачи", "Коэффициент_теплопередачи" },
-                    new string[] { "ADSK_b1", "b1" },
-                    new string[] { "ADSK_b2", "b2" },
-                    new string[] { "ADSK_Коэффициент_надбавки", "Коэффициент_надбавки" },
-                    new string[] { "ADSK_Теплопотери", "Теплопотери" }
+                    new string[] { "BIMBCC_Номер помещения", "ADSK_Номер помещения", "Номер помещения" },
+                    new string[] { "BIMBCC_Температура наружного воздуха", "ADSK_Температура наружного воздуха", "Температура наружного воздуха" },
+                    new string[] { "BIMBCC_Температура помещения", "ADSK_Температура помещения", "Температура помещения" },
+                    new string[] { "BIMBCC_Имя помещения", "ADSK_Имя помещения", "Имя помещения", "ADSK_Имя пространства", "Имя пространства" },
+                    new string[] { targetDesignationParamName, "BIMBCC_Обозначение", "ADSK_Обозначение", "Обозначение" },
+                    new string[] { "BIMBCC_Ориентация", "ADSK_Ориентация", "Ориентация" },
+                    new string[] { "BIMBCC_Длина", "ADSK_Длина", "Длина" },
+                    new string[] { "BIMBCC_Высота", "ADSK_Высота", "Высота" },
+                    new string[] { targetAreaParamName, "BIMBCC_Площадь", "ADSK_Площадь", "Площадь" },
+                    new string[] { "BIMBCC_Коэффициент_n", "ADSK_Коэффициент_n", "Коэффициент_n" },
+                    new string[] { "BIMBCC_Коэффициент_теплопередачи", "ADSK_Коэффициент_теплопередачи", "Коэффициент_теплопередачи" },
+                    new string[] { "BIMBCC_b1", "ADSK_b1", "b1" },
+                    new string[] { "BIMBCC_b2", "ADSK_b2", "b2" },
+                    new string[] { "BIMBCC_Коэффициент_надбавки", "ADSK_Коэффициент_надбавки", "Коэффициент_надбавки" },
+                    new string[] { "BIMBCC_Теплопотери", "ADSK_Теплопотери", "Теплопотери" }
                 };
 
                 ScheduleField fieldSpaceNumber = null;

@@ -179,10 +179,10 @@
                         <TextBox x:Name="LinkedParamTextBox" Style="{StaticResource ModernTextBoxStyle}" Text="ADSK_Обозначение" Margin="0,0,0,8"/>
 
                         <TextBlock Text="Параметр обозначения в кубике:" Foreground="#666666" FontSize="12" Margin="0,0,0,4"/>
-                        <TextBox x:Name="TargetDesigParamTextBox" Style="{StaticResource ModernTextBoxStyle}" Text="ADSK_Обозначение" Margin="0,0,0,8"/>
+                        <TextBox x:Name="TargetDesigParamTextBox" Style="{StaticResource ModernTextBoxStyle}" Text="BIMBCC_Обозначение" Margin="0,0,0,8"/>
 
                         <TextBlock Text="Параметр площади в кубике (м²):" Foreground="#666666" FontSize="12" Margin="0,0,0,4"/>
-                        <TextBox x:Name="TargetAreaParamTextBox" Style="{StaticResource ModernTextBoxStyle}" Text="ADSK_Площадь" Margin="0,0,0,4"/>
+                        <TextBox x:Name="TargetAreaParamTextBox" Style="{StaticResource ModernTextBoxStyle}" Text="BIMBCC_Площадь" Margin="0,0,0,4"/>
                     </StackPanel>
                 </Border>
 

@@ -32,6 +32,14 @@ namespace BCCPlugIn
             }
         }
 
+        public void SetHeaderTitle(string title)
+        {
+            if (!string.IsNullOrEmpty(title))
+            {
+                HeaderTitleText.Text = title.StartsWith(" ") ? title : " | " + title;
+            }
+        }
+
         public void UpdateProgress(string status, double value, bool isIndeterminate = false)
         {
             StatusText.Text = status;

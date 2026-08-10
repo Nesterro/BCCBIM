@@ -22,11 +22,11 @@
         <!-- Header -->
         <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
             <TextBlock Text="BIMBCC" Foreground="#C91414" FontWeight="Bold" FontSize="14"/>
-            <TextBlock Text=" | ЭКСПОРТ ЛИСТОВ В PDF" Foreground="#262626" FontWeight="SemiBold" FontSize="14" Margin="5,0,0,0"/>
+            <TextBlock x:Name="HeaderTitleText" Text=" | ВЫПОЛНЕНИЕ ОПЕРАЦИИ" Foreground="#262626" FontWeight="SemiBold" FontSize="14" Margin="5,0,0,0"/>
         </StackPanel>
         
         <!-- Status Label -->
-        <TextBlock Grid.Row="1" x:Name="StatusText" Text="Подготовка к экспорту..." Foreground="#595959" TextTrimming="CharacterEllipsis"/>
+        <TextBlock Grid.Row="1" x:Name="StatusText" Text="Выполнение..." Foreground="#595959" TextTrimming="CharacterEllipsis"/>
         
         <!-- Flat Red Progress Bar -->
         <ProgressBar Grid.Row="2" x:Name="ExportProgressBar" Height="8" Margin="0,12,0,0" 

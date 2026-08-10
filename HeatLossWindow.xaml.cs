@@ -21,8 +21,8 @@ namespace BCCPlugIn
         public RevitLinkInstance SelectedLinkInstance { get; private set; }
         public FamilySymbol SelectedCubeSymbol { get; private set; }
         public string LinkedParamName { get; private set; } = "ADSK_Обозначение";
-        public string TargetDesignationParamName { get; private set; } = "ADSK_Обозначение";
-        public string TargetAreaParamName { get; private set; } = "ADSK_Площадь";
+        public string TargetDesignationParamName { get; private set; } = "BIMBCC_Обозначение";
+        public string TargetAreaParamName { get; private set; } = "BIMBCC_Площадь";
         public double OutdoorTemp { get; private set; } = -23.0;
         public bool DeleteExistingCubes { get; private set; } = true;
         public bool CreateSchedule { get; private set; } = true;

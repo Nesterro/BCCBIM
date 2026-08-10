@@ -60,6 +60,7 @@ namespace BCCPlugIn
                     ProgressWindow progress = new ProgressWindow();
                     WindowInteropHelper progressHelper = new WindowInteropHelper(progress);
                     progressHelper.Owner = uiapp.MainWindowHandle;
+                    progress.SetHeaderTitle(" | ВЫПОЛНЕНИЕ РАСЧЁТА ТЕПЛОПОТЕРЬ");
                     progress.Show();
 
                     HeatLossCalculationResult calculationResult = null;
