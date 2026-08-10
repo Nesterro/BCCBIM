@@ -77,25 +77,6 @@ namespace BCCPlugIn
     {
         private readonly Document _doc;
 
-        private static readonly (string name, ForgeTypeId specType, string description)[] HeatLossParameters = new[]
-        {
-            ("BIMBCC_Номер помещения", SpecTypeId.String.Text, "Номер помещения/пространства"),
-            ("BIMBCC_Температура наружного воздуха", SpecTypeId.Number, "Температура наружного воздуха (°C)"),
-            ("BIMBCC_Температура помещения", SpecTypeId.Number, "Температура помещения (°C)"),
-            ("BIMBCC_Имя помещения", SpecTypeId.String.Text, "Наименование помещения/пространства"),
-            ("BIMBCC_Обозначение", SpecTypeId.String.Text, "Обозначение ограждающей конструкции"),
-            ("BIMBCC_Ориентация", SpecTypeId.String.Text, "Ориентация конструкции"),
-            ("BIMBCC_Длина", SpecTypeId.Length, "Длина конструкции (м)"),
-            ("BIMBCC_Высота", SpecTypeId.Length, "Высота конструкции (м)"),
-            ("BIMBCC_Площадь", SpecTypeId.Area, "Площадь конструкции (м²)"),
-            ("BIMBCC_Коэффициент_n", SpecTypeId.Number, "Коэффициент n"),
-            ("BIMBCC_Коэффициент_теплопередачи", SpecTypeId.Number, "Коэффициент теплопередачи k (Вт/(м²·°C))"),
-            ("BIMBCC_b1", SpecTypeId.Number, "Поправка на ориентацию b1"),
-            ("BIMBCC_b2", SpecTypeId.Number, "Поправка на угол b2"),
-            ("BIMBCC_Коэффициент_надбавки", SpecTypeId.Number, "Коэффициент надбавки (1+b1+b2)"),
-            ("BIMBCC_Теплопотери", SpecTypeId.Number, "Теплопотери Q (Вт)")
-        };
-
         public HeatLossEngine(Document doc)
         {
             _doc = doc ?? throw new ArgumentNullException(nameof(doc));
@@ -176,8 +157,8 @@ namespace BCCPlugIn
                 _doc.Regenerate();
             }
 
-            // Ensure all 15 BIMBCC project parameters are bound to Generic Models in document
-            EnsureHeatLossProjectParametersExist();
+            // Ensure all 15 BIMBCC project parameters are bound to Generic Models in document (must be inside active transaction)
+            EnsureHeatLossProjectParametersExist(result);
 
             if (deleteExistingCubes)
             {
@@ -288,7 +269,44 @@ namespace BCCPlugIn
             return result;
         }
 
-        private void EnsureHeatLossProjectParametersExist()
+        private static string BuildSharedParameterFileContent()
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine("# This is a Revit shared parameter file.");
+            sb.AppendLine("*META\tVERSION\tMINVER");
+            sb.AppendLine("META\t2.0\t1");
+            sb.AppendLine("*GROUP\tID\tNAME");
+            sb.AppendLine("GROUP\t1\tBIMBCC_Теплопотери");
+            sb.AppendLine("*PARAM\tGUID\tNAME\tDATATYPE\tDATACATEGORY\tGROUP\tVISIBLE\tDESCRIPTION\tUSERMODIFIABLE\tHIDEWHENNOVALUE");
+
+            var paramsDef = new (string guid, string name, string type, string desc)[]
+            {
+                ("a1b2c3d4-0001-4000-8000-000000000001", "BIMBCC_Номер помещения", "TEXT", "Номер помещения/пространства"),
+                ("a1b2c3d4-0002-4000-8000-000000000002", "BIMBCC_Температура наружного воздуха", "NUMBER", "Температура наружного воздуха (°C)"),
+                ("a1b2c3d4-0003-4000-8000-000000000003", "BIMBCC_Температура помещения", "NUMBER", "Температура помещения (°C)"),
+                ("a1b2c3d4-0004-4000-8000-000000000004", "BIMBCC_Имя помещения", "TEXT", "Наименование помещения/пространства"),
+                ("a1b2c3d4-0005-4000-8000-000000000005", "BIMBCC_Обозначение", "TEXT", "Обозначение ограждающей конструкции"),
+                ("a1b2c3d4-0006-4000-8000-000000000006", "BIMBCC_Ориентация", "TEXT", "Ориентация конструкции"),
+                ("a1b2c3d4-0007-4000-8000-000000000007", "BIMBCC_Длина", "LENGTH", "Длина конструкции (м)"),
+                ("a1b2c3d4-0008-4000-8000-000000000008", "BIMBCC_Высота", "LENGTH", "Высота конструкции (м)"),
+                ("a1b2c3d4-0009-4000-8000-000000000009", "BIMBCC_Площадь", "AREA", "Площадь конструкции (м²)"),
+                ("a1b2c3d4-0010-4000-8000-000000000010", "BIMBCC_Коэффициент_n", "NUMBER", "Коэффициент n"),
+                ("a1b2c3d4-0011-4000-8000-000000000011", "BIMBCC_Коэффициент_теплопередачи", "NUMBER", "Коэффициент теплопередачи k (Вт/(м²·°C))"),
+                ("a1b2c3d4-0012-4000-8000-000000000012", "BIMBCC_b1", "NUMBER", "Поправка на ориентацию b1"),
+                ("a1b2c3d4-0013-4000-8000-000000000013", "BIMBCC_b2", "NUMBER", "Поправка на угол b2"),
+                ("a1b2c3d4-0014-4000-8000-000000000014", "BIMBCC_Коэффициент_надбавки", "NUMBER", "Коэффициент надбавки (1+b1+b2)"),
+                ("a1b2c3d4-0015-4000-8000-000000000015", "BIMBCC_Теплопотери", "NUMBER", "Теплопотери Q (Вт)")
+            };
+
+            foreach (var p in paramsDef)
+            {
+                sb.AppendLine($"PARAM\t{p.guid}\t{p.name}\t{p.type}\t\t1\t1\t{p.desc}\t1\t0");
+            }
+
+            return sb.ToString();
+        }
+
+        private void EnsureHeatLossProjectParametersExist(HeatLossCalculationResult result)
         {
             try
             {
@@ -302,46 +320,30 @@ namespace BCCPlugIn
                 string origSharedFile = _doc.Application.SharedParametersFilename;
                 string tempSharedFile = Path.Combine(Path.GetTempPath(), "BIMBCC_HeatLoss_SharedParams.txt");
 
-                if (!File.Exists(tempSharedFile))
-                {
-                    File.WriteAllText(tempSharedFile,
-                        "# This is a Revit shared parameter file.\r\n" +
-                        "*META\tVERSION\tMINVER\r\n" +
-                        "META\t2.0\t1\r\n" +
-                        "*GROUP\tID\tNAME\r\n" +
-                        "GROUP\t1\tBIMBCC_Теплопотери\r\n" +
-                        "*PARAM\tGUID\tNAME\tDATATYPE\tDATACATEGORY\tGROUP\tVISIBLE\tDESCRIPTION\tUSERMODIFIABLE\tHIDEWHENNOVALUE\r\n"
-                    );
-                }
+                File.WriteAllText(tempSharedFile, BuildSharedParameterFileContent(), Encoding.UTF8);
 
                 _doc.Application.SharedParametersFilename = tempSharedFile;
                 DefinitionFile defFile = _doc.Application.OpenSharedParameterFile();
 
                 if (defFile != null)
                 {
-                    DefinitionGroup group = defFile.Groups.get_Item("BIMBCC_Теплопотери") ?? defFile.Groups.Create("BIMBCC_Теплопотери");
-
-                    foreach (var (pName, specType, desc) in HeatLossParameters)
+                    DefinitionGroup group = defFile.Groups.get_Item("BIMBCC_Теплопотери");
+                    if (group != null)
                     {
-                        Definition def = group.Definitions.get_Item(pName);
-                        if (def == null)
-                        {
-                            ExternalDefinitionCreationOptions opt = new ExternalDefinitionCreationOptions(pName, specType)
-                            {
-                                Description = desc,
-                                UserModifiable = true,
-                                Visible = true
-                            };
-                            def = group.Definitions.Create(opt);
-                        }
-
-                        if (def != null)
+                        int boundCount = 0;
+                        foreach (Definition def in group.Definitions)
                         {
                             Binding existing = _doc.ParameterBindings.get_Item(def);
                             if (existing == null)
                             {
-                                _doc.ParameterBindings.Insert(def, binding, GroupTypeId.Data);
+                                bool ok = _doc.ParameterBindings.Insert(def, binding, GroupTypeId.Data);
+                                if (ok) boundCount++;
                             }
+                        }
+
+                        if (boundCount > 0)
+                        {
+                            result?.Logs.Add($"Добавлено и привязано проектных параметров к Обобщенным моделям: {boundCount}.");
                         }
                     }
                 }
@@ -351,9 +353,9 @@ namespace BCCPlugIn
                     _doc.Application.SharedParametersFilename = origSharedFile;
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Fallback binding
+                result?.Logs.Add($"Предупреждение привязке параметров: {ex.Message}");
             }
         }
 
