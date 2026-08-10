@@ -74,17 +74,27 @@ namespace BCCPlugIn
                     HeatLossCalculationResult calculationResult = new HeatLossCalculationResult();
 
                     // =========================================================================
-                    // ИТЕРАЦИЯ 1: СОЗДАНИЕ И ПРИВЯЗКА ПАРАМЕТРОВ К ПРОЕКТУ (ТРАНЗАКЦИЯ 1)
-                    // Файл параметров открывается, привязка выполняется и файл восстанавливается
-                    // всё внутри одного метода — ExternalDefinition объекты остаются валидными.
+                    // ИТЕРАЦИЯ 1: СОЗДАНИЕ И ПРИВЯЗКА ПАРАМЕТРОВ К ПРОЕКТУ
+                    // STEP A — вне транзакции: открыть файл, получить ExternalDefinitions
+                    // STEP B — внутри транзакции: привязать к OST_GenericModel
+                    // STEP C — после коммита: восстановить SharedParametersFilename
                     // =========================================================================
-                    progress.UpdateProgress("Итерация 1 из 3: Создание и привязка проектных параметров...", 15.0);
+                    progress.UpdateProgress("Итерация 1 из 3: Подготовка общих параметров...", 10.0);
+                    // STEP A: OUTSIDE transaction — file is opened and kept open
+                    string origSharedParamFile = null;
+                    var definitions = engine.PrepareSharedParamDefinitions(out origSharedParamFile, calculationResult);
+
+                    progress.UpdateProgress("Итерация 1 из 3: Привязка параметров к Обобщенным моделям...", 15.0);
+                    // STEP B: INSIDE transaction — Insert while file is still open
                     using (Transaction trans1 = new Transaction(doc, "BIMBCC Теплопотери - Итерация 1: Параметры"))
                     {
                         trans1.Start();
-                        engine.BindHeatLossProjectParameters(calculationResult);
+                        engine.InsertParameterBindings(definitions, calculationResult);
                         trans1.Commit();
                     }
+
+                    // STEP C: AFTER commit — restore original shared param filename
+                    engine.RestoreSharedParamFilename(origSharedParamFile);
 
                     // =========================================================================
                     // ИТЕРАЦИЯ 2: АНАЛИЗ ГЕОМЕТРИИ И РАССТАНОВКА МАРКЕРОВ (ТРАНЗАКЦИЯ 2)

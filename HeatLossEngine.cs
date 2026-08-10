@@ -129,90 +129,88 @@ namespace BCCPlugIn
             return collector.ToList();
         }
 
-        // COMBINED ITERATION 1: Open shared param file, get/create definitions, bind to GenericModel, restore filename.
-        // Everything in one step so ExternalDefinition objects are valid during Insert.
-        public void BindHeatLossProjectParameters(HeatLossCalculationResult result)
+        // -----------------------------------------------------------------------
+        // ITERATION 1 — STEP A (call OUTSIDE any transaction)
+        // Write the shared param file, open it, collect ExternalDefinition objects.
+        // Does NOT restore SharedParametersFilename — caller must call
+        // RestoreSharedParamFilename() AFTER the transaction that calls
+        // -----------------------------------------------------------------------
+        public List<ExternalDefinition> PrepareSharedParamDefinitions(
+            out string origFilename, HeatLossCalculationResult result)
         {
-            string origSharedFile = null;
+            origFilename = null;
+            var definitions = new List<ExternalDefinition>();
 
             try
             {
-                // Step 1: Ensure BIMBCC shared parameter file exists
                 string tempDir = Path.Combine(Path.GetTempPath(), "BIMBCC");
                 if (!Directory.Exists(tempDir)) Directory.CreateDirectory(tempDir);
                 string bimbccFilePath = Path.Combine(tempDir, "BIMBCC_HeatLoss_SharedParams.txt");
 
-                // Always write a fresh clean file so the format is guaranteed correct
-                var paramsDef = new (string guid, string name, string type, string desc)[]
+                // Write file as UTF-16 LE (Revit's required encoding for shared param files)
+                // Use explicit StreamWriter so we control BOM and line endings precisely
+                using (var sw = new StreamWriter(bimbccFilePath, false, Encoding.Unicode))
                 {
-                    ("e1b2c3d4-0001-4000-8000-000000000001", "BIMBCC_Номер помещения",               "TEXT",   "Номер помещения/пространства"),
-                    ("e1b2c3d4-0002-4000-8000-000000000002", "BIMBCC_Температура наружного воздуха", "NUMBER", "Температура наружного воздуха (°C)"),
-                    ("e1b2c3d4-0003-4000-8000-000000000003", "BIMBCC_Температура помещения",         "NUMBER", "Температура помещения (°C)"),
-                    ("e1b2c3d4-0004-4000-8000-000000000004", "BIMBCC_Имя помещения",                 "TEXT",   "Наименование помещения/пространства"),
-                    ("e1b2c3d4-0005-4000-8000-000000000005", "BIMBCC_Обозначение",                   "TEXT",   "Обозначение ограждающей конструкции"),
-                    ("e1b2c3d4-0006-4000-8000-000000000006", "BIMBCC_Ориентация",                    "TEXT",   "Ориентация конструкции"),
-                    ("e1b2c3d4-0007-4000-8000-000000000007", "BIMBCC_Длина",                         "LENGTH", "Длина конструкции (м)"),
-                    ("e1b2c3d4-0008-4000-8000-000000000008", "BIMBCC_Высота",                        "LENGTH", "Высота конструкции (м)"),
-                    ("e1b2c3d4-0009-4000-8000-000000000009", "BIMBCC_Площадь",                       "AREA",   "Площадь конструкции (м²)"),
-                    ("e1b2c3d4-0010-4000-8000-000000000010", "BIMBCC_Коэффициент_n",                 "NUMBER", "Коэффициент n"),
-                    ("e1b2c3d4-0011-4000-8000-000000000011", "BIMBCC_Коэффициент_теплопередачи",      "NUMBER", "Коэффициент теплопередачи k (Вт/(м²·°C))"),
-                    ("e1b2c3d4-0012-4000-8000-000000000012", "BIMBCC_b1",                            "NUMBER", "Поправка на ориентацию b1"),
-                    ("e1b2c3d4-0013-4000-8000-000000000013", "BIMBCC_b2",                            "NUMBER", "Поправка на угол b2"),
-                    ("e1b2c3d4-0014-4000-8000-000000000014", "BIMBCC_Коэффициент_надбавки",          "NUMBER", "Коэффициент надбавки (1+b1+b2)"),
-                    ("e1b2c3d4-0015-4000-8000-000000000015", "BIMBCC_Теплопотери",                   "NUMBER", "Теплопотери Q (Вт)")
-                };
+                    sw.WriteLine("# This is a Revit shared parameter file.");
+                    sw.WriteLine("# Do not edit manually.");
+                    sw.WriteLine("*META\tVERSION\tMINVER");
+                    sw.WriteLine("META\t2\t1");
+                    sw.WriteLine("*GROUP\tID\tNAME");
+                    sw.WriteLine("GROUP\t1\tBIMBCC_Теплопотери");
+                    sw.WriteLine("*PARAM\tGUID\tNAME\tDATATYPE\tDATACATEGORY\tGROUP\tVISIBLE\tDESCRIPTION\tUSERMODIFIABLE\tHIDEWHENNOVALUE");
+                    sw.WriteLine("PARAM\te1b2c3d4-0001-4000-8000-000000000001\tBIMBCC_Номер помещения\tTEXT\t\t1\t1\tНомер помещения/пространства\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0002-4000-8000-000000000002\tBIMBCC_Температура наружного воздуха\tNUMBER\t\t1\t1\tТемпература наружного воздуха\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0003-4000-8000-000000000003\tBIMBCC_Температура помещения\tNUMBER\t\t1\t1\tТемпература помещения\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0004-4000-8000-000000000004\tBIMBCC_Имя помещения\tTEXT\t\t1\t1\tНаименование помещения\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0005-4000-8000-000000000005\tBIMBCC_Обозначение\tTEXT\t\t1\t1\tОбозначение конструкции\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0006-4000-8000-000000000006\tBIMBCC_Ориентация\tTEXT\t\t1\t1\tОриентация конструкции\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0007-4000-8000-000000000007\tBIMBCC_Длина\tLENGTH\t\t1\t1\tДлина конструкции\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0008-4000-8000-000000000008\tBIMBCC_Высота\tLENGTH\t\t1\t1\tВысота конструкции\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0009-4000-8000-000000000009\tBIMBCC_Площадь\tAREA\t\t1\t1\tПлощадь конструкции\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0010-4000-8000-000000000010\tBIMBCC_Коэффициент_n\tNUMBER\t\t1\t1\tКоэффициент n\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0011-4000-8000-000000000011\tBIMBCC_Коэффициент_теплопередачи\tNUMBER\t\t1\t1\tКоэффициент теплопередачи k\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0012-4000-8000-000000000012\tBIMBCC_b1\tNUMBER\t\t1\t1\tПоправка b1\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0013-4000-8000-000000000013\tBIMBCC_b2\tNUMBER\t\t1\t1\tПоправка b2\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0014-4000-8000-000000000014\tBIMBCC_Коэффициент_надбавки\tNUMBER\t\t1\t1\tКоэффициент надбавки\t1\t0");
+                    sw.WriteLine("PARAM\te1b2c3d4-0015-4000-8000-000000000015\tBIMBCC_Теплопотери\tNUMBER\t\t1\t1\tТеплопотери Q (Вт)\t1\t0");
+                }
 
-                var paramsToEnsure = new (string name, ForgeTypeId forgeType, string desc)[]
-                {
-                    ("BIMBCC_Номер помещения",               SpecTypeId.String.Text, "Номер помещения/пространства"),
-                    ("BIMBCC_Температура наружного воздуха", SpecTypeId.Number,      "Температура наружного воздуха (°C)"),
-                    ("BIMBCC_Температура помещения",         SpecTypeId.Number,      "Температура помещения (°C)"),
-                    ("BIMBCC_Имя помещения",                 SpecTypeId.String.Text, "Наименование помещения/пространства"),
-                    ("BIMBCC_Обозначение",                   SpecTypeId.String.Text, "Обозначение ограждающей конструкции"),
-                    ("BIMBCC_Ориентация",                    SpecTypeId.String.Text, "Ориентация конструкции"),
-                    ("BIMBCC_Длина",                         SpecTypeId.Length,      "Длина конструкции (м)"),
-                    ("BIMBCC_Высота",                        SpecTypeId.Length,      "Высота конструкции (м)"),
-                    ("BIMBCC_Площадь",                       SpecTypeId.Area,        "Площадь конструкции (м²)"),
-                    ("BIMBCC_Коэффициент_n",                 SpecTypeId.Number,      "Коэффициент n"),
-                    ("BIMBCC_Коэффициент_теплопередачи",      SpecTypeId.Number,      "Коэффициент теплопередачи k (Вт/(м²·°C))"),
-                    ("BIMBCC_b1",                            SpecTypeId.Number,      "Поправка на ориентацию b1"),
-                    ("BIMBCC_b2",                            SpecTypeId.Number,      "Поправка на угол b2"),
-                    ("BIMBCC_Коэффициент_надбавки",          SpecTypeId.Number,      "Коэффициент надбавки (1+b1+b2)"),
-                    ("BIMBCC_Теплопотери",                   SpecTypeId.Number,      "Теплопотери Q (Вт)")
-                };
+                // Save original filename BEFORE switching
+                try { origFilename = _doc.Application.SharedParametersFilename; } catch { }
 
-                StringBuilder sb = new StringBuilder();
-                sb.AppendLine("# This is a Revit shared parameter file.");
-                sb.AppendLine("# Do not edit manually.");
-                sb.AppendLine("*META\tVERSION\tMINVER");
-                sb.AppendLine("META\t2.0\t1");
-                sb.AppendLine("*GROUP\tID\tNAME");
-                sb.AppendLine("GROUP\t1\tBIMBCC_Теплопотери");
-                sb.AppendLine("*PARAM\tGUID\tNAME\tDATATYPE\tDATACATEGORY\tGROUP\tVISIBLE\tDESCRIPTION\tUSERMODIFIABLE\tHIDEWHENNOVALUE");
-                foreach (var p in paramsDef)
-                    sb.AppendLine($"PARAM\t{p.guid}\t{p.name}\t{p.type}\t\t1\t1\t{p.desc}\t1\t0");
-
-                File.WriteAllText(bimbccFilePath, sb.ToString(), Encoding.Unicode);
-
-                // Step 2: Save original filename so we can restore it later
-                try { origSharedFile = _doc.Application.SharedParametersFilename; } catch { }
-
-                // Step 3: Point Revit at BIMBCC file and open it
+                // Switch to BIMBCC file — NOTE: this is OUTSIDE any transaction
                 _doc.Application.SharedParametersFilename = bimbccFilePath;
                 DefinitionFile defFile = _doc.Application.OpenSharedParameterFile();
 
                 if (defFile == null)
                 {
-                    result?.Logs.Add("Итерация 1: Не удалось открыть файл общих параметров BIMBCC.");
-                    return;
+                    result?.Logs.Add("Итерация 1 (подготовка): Не удалось открыть BIMBCC_HeatLoss_SharedParams.txt.");
+                    return definitions;
                 }
 
-                // Step 4: Get or create group
                 DefinitionGroup group = defFile.Groups.get_Item("BIMBCC_Теплопотери")
                                      ?? defFile.Groups.Create("BIMBCC_Теплопотери");
 
-                // Step 5: Get or create definitions (FILE IS STILL OPEN HERE)
-                var definitions = new List<ExternalDefinition>();
+                // Build ExternalDefinition list — FILE IS STILL OPEN, filename unchanged
+                var paramsToEnsure = new (string name, ForgeTypeId forgeType)[]
+                {
+                    ("BIMBCC_Номер помещения",               SpecTypeId.String.Text),
+                    ("BIMBCC_Температура наружного воздуха", SpecTypeId.Number),
+                    ("BIMBCC_Температура помещения",         SpecTypeId.Number),
+                    ("BIMBCC_Имя помещения",                 SpecTypeId.String.Text),
+                    ("BIMBCC_Обозначение",                   SpecTypeId.String.Text),
+                    ("BIMBCC_Ориентация",                    SpecTypeId.String.Text),
+                    ("BIMBCC_Длина",                         SpecTypeId.Length),
+                    ("BIMBCC_Высота",                        SpecTypeId.Length),
+                    ("BIMBCC_Площадь",                       SpecTypeId.Area),
+                    ("BIMBCC_Коэффициент_n",                 SpecTypeId.Number),
+                    ("BIMBCC_Коэффициент_теплопередачи",     SpecTypeId.Number),
+                    ("BIMBCC_b1",                            SpecTypeId.Number),
+                    ("BIMBCC_b2",                            SpecTypeId.Number),
+                    ("BIMBCC_Коэффициент_надбавки",          SpecTypeId.Number),
+                    ("BIMBCC_Теплопотери",                   SpecTypeId.Number)
+                };
+
                 foreach (var item in paramsToEnsure)
                 {
                     Definition def = group.Definitions.get_Item(item.name);
@@ -220,26 +218,52 @@ namespace BCCPlugIn
                     {
                         try
                         {
-                            var opt = new ExternalDefinitionCreationOptions(item.name, item.forgeType)
-                            {
-                                Description    = item.desc,
-                                UserModifiable = true,
-                                Visible        = true
-                            };
-                            def = group.Definitions.Create(opt);
+                            def = group.Definitions.Create(
+                                new ExternalDefinitionCreationOptions(item.name, item.forgeType)
+                                { UserModifiable = true, Visible = true });
                         }
                         catch { }
                     }
                     if (def is ExternalDefinition extDef) definitions.Add(extDef);
                 }
 
-                result?.Logs.Add($"Итерация 1: Получено definitions из файла: {definitions.Count}.");
+                result?.Logs.Add($"Итерация 1 (подготовка): definitions готово: {definitions.Count}/15.");
+            }
+            catch (Exception ex)
+            {
+                result?.Logs.Add($"Итерация 1 (подготовка): {ex.Message}");
+                // Restore on error
+                try
+                {
+                    if (!string.IsNullOrEmpty(origFilename) && File.Exists(origFilename))
+                        _doc.Application.SharedParametersFilename = origFilename;
+                }
+                catch { }
+                origFilename = null; // signal to caller that restore already done
+            }
 
-                // Step 6: Bind ALL definitions to GenericModel — FILE IS STILL OPEN
+            return definitions;
+        }
+
+        // -----------------------------------------------------------------------
+        // ITERATION 1 — STEP B (call INSIDE Transaction 1)
+        // Bind each ExternalDefinition to OST_GenericModel.
+        // -----------------------------------------------------------------------
+        public void InsertParameterBindings(
+            List<ExternalDefinition> definitions, HeatLossCalculationResult result)
+        {
+            if (definitions == null || definitions.Count == 0)
+            {
+                result?.Logs.Add("Итерация 1 (привязка): список definitions пуст, пропускаем.");
+                return;
+            }
+
+            try
+            {
                 Category genModelCat = _doc.Settings.Categories.get_Item(BuiltInCategory.OST_GenericModel);
                 if (genModelCat == null)
                 {
-                    result?.Logs.Add("Итерация 1: Категория OST_GenericModel не найдена.");
+                    result?.Logs.Add("Итерация 1 (привязка): категория OST_GenericModel не найдена.");
                     return;
                 }
 
@@ -247,26 +271,21 @@ namespace BCCPlugIn
                 catSet.Insert(genModelCat);
                 InstanceBinding binding = _doc.Application.Create.NewInstanceBinding(catSet);
 
-                int boundCount  = 0;
-                int alreadyCount = 0;
+                int boundCount = 0, alreadyCount = 0;
                 foreach (ExternalDefinition def in definitions)
                 {
-                    // Check if already bound
                     bool alreadyBound = false;
                     var it = _doc.ParameterBindings.ForwardIterator();
                     while (it.MoveNext())
                     {
-                        if (it.Key is Definition existingDef && existingDef.Name == def.Name)
+                        if (it.Key is Definition existingKey && existingKey.Name == def.Name)
                         {
                             alreadyBound = true;
-                            // Ensure GenericModel is in existing binding
-                            if (it.Current is ElementBinding existingBnd)
+                            if (it.Current is ElementBinding existingBnd
+                                && !existingBnd.Categories.Contains(genModelCat))
                             {
-                                if (!existingBnd.Categories.Contains(genModelCat))
-                                {
-                                    existingBnd.Categories.Insert(genModelCat);
-                                    _doc.ParameterBindings.ReInsert(def, existingBnd, BuiltInParameterGroup.PG_DATA);
-                                }
+                                existingBnd.Categories.Insert(genModelCat);
+                                _doc.ParameterBindings.ReInsert(def, existingBnd, BuiltInParameterGroup.PG_DATA);
                             }
                             alreadyCount++;
                             break;
@@ -282,23 +301,29 @@ namespace BCCPlugIn
                     }
                 }
 
-                result?.Logs.Add($"Итерация 1 (Привязка к Обобщенным моделям): Добавлено новых: {boundCount}, уже было: {alreadyCount}.");
+                result?.Logs.Add(
+                    $"Итерация 1 (привязка): добавлено {boundCount}, уже было {alreadyCount}.");
                 _doc.Regenerate();
             }
             catch (Exception ex)
             {
-                result?.Logs.Add($"Итерация 1: {ex.Message}");
+                result?.Logs.Add($"Итерация 1 (привязка): {ex.Message}");
             }
-            finally
+        }
+
+        // -----------------------------------------------------------------------
+        // ITERATION 1 — STEP C (call AFTER Transaction 1 commits)
+        // Restore the original SharedParametersFilename.
+        // -----------------------------------------------------------------------
+        public void RestoreSharedParamFilename(string origFilename)
+        {
+            if (string.IsNullOrEmpty(origFilename)) return;
+            try
             {
-                // Step 7: Restore original shared parameter filename
-                try
-                {
-                    if (!string.IsNullOrEmpty(origSharedFile) && File.Exists(origSharedFile))
-                        _doc.Application.SharedParametersFilename = origSharedFile;
-                }
-                catch { }
+                if (File.Exists(origFilename))
+                    _doc.Application.SharedParametersFilename = origFilename;
             }
+            catch { }
         }
 
         // ITERATION 2: PLACE CUBES IN SPACES (TRANSACTION 2)
