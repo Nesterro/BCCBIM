@@ -157,7 +157,7 @@ namespace BCCPlugIn
                 _doc.Regenerate();
             }
 
-            // Ensure all 15 BIMBCC project parameters are bound to Generic Models in document (must be inside active transaction)
+            // Ensure all 15 BIMBCC project parameters are bound to Generic Models in document (inside active transaction)
             EnsureHeatLossProjectParametersExist(result);
 
             if (deleteExistingCubes)
@@ -249,7 +249,7 @@ namespace BCCPlugIn
                 result.CreatedSchedule = CreateOrUpdateRevitSchedule(targetDesignationParamName, targetAreaParamName);
                 if (result.CreatedSchedule != null)
                 {
-                    result.Logs.Add($"Создана спецификация в Revit: '{result.CreatedSchedule.Name}'.");
+                    result.Logs.Add($"Сформирована спецификация в Revit: '{result.CreatedSchedule.Name}'.");
                 }
             }
 
@@ -317,6 +317,17 @@ namespace BCCPlugIn
                 catSet.Insert(genModelCat);
                 InstanceBinding binding = _doc.Application.Create.NewInstanceBinding(catSet);
 
+                HashSet<string> boundNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                DefinitionBindingMapIterator iter = _doc.ParameterBindings.ForwardIterator();
+                iter.Reset();
+                while (iter.MoveNext())
+                {
+                    if (iter.Key != null)
+                    {
+                        boundNames.Add(iter.Key.Name);
+                    }
+                }
+
                 string origSharedFile = _doc.Application.SharedParametersFilename;
                 string tempSharedFile = Path.Combine(Path.GetTempPath(), "BIMBCC_HeatLoss_SharedParams.txt");
 
@@ -333,11 +344,14 @@ namespace BCCPlugIn
                         int boundCount = 0;
                         foreach (Definition def in group.Definitions)
                         {
-                            Binding existing = _doc.ParameterBindings.get_Item(def);
-                            if (existing == null)
+                            if (!boundNames.Contains(def.Name))
                             {
                                 bool ok = _doc.ParameterBindings.Insert(def, binding, GroupTypeId.Data);
                                 if (ok) boundCount++;
+                            }
+                            else
+                            {
+                                _doc.ParameterBindings.ReInsert(def, binding, GroupTypeId.Data);
                             }
                         }
 
@@ -352,10 +366,12 @@ namespace BCCPlugIn
                 {
                     _doc.Application.SharedParametersFilename = origSharedFile;
                 }
+
+                _doc.Regenerate();
             }
             catch (Exception ex)
             {
-                result?.Logs.Add($"Предупреждение привязке параметров: {ex.Message}");
+                result?.Logs.Add($"Предупреждение при привязке параметров: {ex.Message}");
             }
         }
 
@@ -757,24 +773,32 @@ namespace BCCPlugIn
             {
                 string scheduleName = "Спецификация ограждающих конструкций (Теплопотери)";
 
-                ViewSchedule existingSchedule = new FilteredElementCollector(_doc)
+                ViewSchedule schedule = new FilteredElementCollector(_doc)
                     .OfClass(typeof(ViewSchedule))
                     .Cast<ViewSchedule>()
                     .FirstOrDefault(s => s.Name.Equals(scheduleName, StringComparison.OrdinalIgnoreCase));
 
-                if (existingSchedule != null)
+                if (schedule == null)
+                {
+                    schedule = ViewSchedule.CreateSchedule(_doc, new ElementId(BuiltInCategory.OST_GenericModel));
+                    schedule.Name = scheduleName;
+                }
+
+                ScheduleDefinition definition = schedule.Definition;
+
+                // Clear existing fields from schedule definition
+                int existingFieldCount = definition.GetFieldCount();
+                for (int f = existingFieldCount - 1; f >= 0; f--)
                 {
                     try
                     {
-                        _doc.Delete(existingSchedule.Id);
+                        definition.RemoveField(definition.GetField(f).FieldId);
                     }
                     catch { }
                 }
 
-                ViewSchedule newSchedule = ViewSchedule.CreateSchedule(_doc, new ElementId(BuiltInCategory.OST_GenericModel));
-                newSchedule.Name = scheduleName;
+                definition.ClearSortGroupFields();
 
-                ScheduleDefinition definition = newSchedule.Definition;
                 var schedulableFields = definition.GetSchedulableFields();
 
                 string[][] columnCandidates = new string[][]
@@ -851,7 +875,7 @@ namespace BCCPlugIn
                     definition.AddSortGroupField(sortDesig);
                 }
 
-                return newSchedule;
+                return schedule;
             }
             catch
             {
