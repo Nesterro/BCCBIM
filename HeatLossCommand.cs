@@ -73,18 +73,16 @@ namespace BCCPlugIn
 
                     HeatLossCalculationResult calculationResult = new HeatLossCalculationResult();
 
-                    // PREPARATION: Load/Create shared parameter definitions OUTSIDE ANY TRANSACTION
-                    progress.UpdateProgress("Подготовка определений параметров...", 5.0);
-                    var definitions = engine.GetOrCreateHeatLossDefinitions(calculationResult);
-
                     // =========================================================================
                     // ИТЕРАЦИЯ 1: СОЗДАНИЕ И ПРИВЯЗКА ПАРАМЕТРОВ К ПРОЕКТУ (ТРАНЗАКЦИЯ 1)
+                    // Файл параметров открывается, привязка выполняется и файл восстанавливается
+                    // всё внутри одного метода — ExternalDefinition объекты остаются валидными.
                     // =========================================================================
                     progress.UpdateProgress("Итерация 1 из 3: Создание и привязка проектных параметров...", 15.0);
                     using (Transaction trans1 = new Transaction(doc, "BIMBCC Теплопотери - Итерация 1: Параметры"))
                     {
                         trans1.Start();
-                        engine.BindHeatLossProjectParameters(definitions, calculationResult);
+                        engine.BindHeatLossProjectParameters(calculationResult);
                         trans1.Commit();
                     }
 
