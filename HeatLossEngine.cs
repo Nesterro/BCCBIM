@@ -157,7 +157,7 @@ namespace BCCPlugIn
                 _doc.Regenerate();
             }
 
-            // Ensure all 15 BIMBCC project parameters are bound to Generic Models in document (inside active transaction)
+            // Ensure all 15 BIMBCC project parameters are bound to Generic Models in document
             EnsureHeatLossProjectParametersExist(result);
 
             if (deleteExistingCubes)
@@ -246,7 +246,7 @@ namespace BCCPlugIn
             if (createSchedule)
             {
                 progressCallback?.Invoke("Формирование спецификации в Revit...", 80.0);
-                result.CreatedSchedule = CreateOrUpdateRevitSchedule(targetDesignationParamName, targetAreaParamName);
+                result.CreatedSchedule = CreateOrUpdateRevitSchedule(targetDesignationParamName, targetAreaParamName, result);
                 if (result.CreatedSchedule != null)
                 {
                     result.Logs.Add($"Сформирована спецификация в Revit: '{result.CreatedSchedule.Name}'.");
@@ -311,22 +311,15 @@ namespace BCCPlugIn
             try
             {
                 Category genModelCat = _doc.Settings.Categories.get_Item(BuiltInCategory.OST_GenericModel);
-                if (genModelCat == null || !genModelCat.AllowsBoundParameters) return;
+                if (genModelCat == null || !genModelCat.AllowsBoundParameters)
+                {
+                    result?.Logs.Add("Категория Обобщенные модели недоступна для привязки параметров.");
+                    return;
+                }
 
                 CategorySet catSet = _doc.Application.Create.NewCategorySet();
                 catSet.Insert(genModelCat);
                 InstanceBinding binding = _doc.Application.Create.NewInstanceBinding(catSet);
-
-                HashSet<string> boundNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                DefinitionBindingMapIterator iter = _doc.ParameterBindings.ForwardIterator();
-                iter.Reset();
-                while (iter.MoveNext())
-                {
-                    if (iter.Key != null)
-                    {
-                        boundNames.Add(iter.Key.Name);
-                    }
-                }
 
                 string origSharedFile = _doc.Application.SharedParametersFilename;
                 string tempSharedFile = Path.Combine(Path.GetTempPath(), "BIMBCC_HeatLoss_SharedParams.txt");
@@ -336,31 +329,34 @@ namespace BCCPlugIn
                 _doc.Application.SharedParametersFilename = tempSharedFile;
                 DefinitionFile defFile = _doc.Application.OpenSharedParameterFile();
 
-                if (defFile != null)
+                if (defFile == null)
                 {
-                    DefinitionGroup group = defFile.Groups.get_Item("BIMBCC_Теплопотери");
-                    if (group != null)
-                    {
-                        int boundCount = 0;
-                        foreach (Definition def in group.Definitions)
-                        {
-                            if (!boundNames.Contains(def.Name))
-                            {
-                                bool ok = _doc.ParameterBindings.Insert(def, binding, GroupTypeId.Data);
-                                if (ok) boundCount++;
-                            }
-                            else
-                            {
-                                _doc.ParameterBindings.ReInsert(def, binding, GroupTypeId.Data);
-                            }
-                        }
+                    result?.Logs.Add("Не удалось открыть созданный ФОП файл.");
+                    return;
+                }
 
-                        if (boundCount > 0)
+                DefinitionGroup group = defFile.Groups.get_Item("BIMBCC_Теплопотери");
+                if (group == null)
+                {
+                    result?.Logs.Add("Группа 'BIMBCC_Теплопотери' не найдена в ФОП.");
+                    return;
+                }
+
+                int boundCount = 0;
+                foreach (Definition def in group.Definitions)
+                {
+                    if (def is ExternalDefinition extDef)
+                    {
+                        bool ok = _doc.ParameterBindings.Insert(extDef, binding, BuiltInParameterGroup.PG_DATA);
+                        if (!ok)
                         {
-                            result?.Logs.Add($"Добавлено и привязано проектных параметров к Обобщенным моделям: {boundCount}.");
+                            ok = _doc.ParameterBindings.ReInsert(extDef, binding, BuiltInParameterGroup.PG_DATA);
                         }
+                        if (ok) boundCount++;
                     }
                 }
+
+                result?.Logs.Add($"Привязано параметров BIMBCC к Обобщенным моделям: {boundCount} из {group.Definitions.Size}.");
 
                 if (!string.IsNullOrEmpty(origSharedFile) && File.Exists(origSharedFile))
                 {
@@ -678,7 +674,7 @@ namespace BCCPlugIn
             SetCubeParamValue(cube, item.SpaceName, "BIMBCC_Имя помещения", "ADSK_Имя помещения", "ADSK_Имя пространства", "Имя помещения", "Имя пространства", "Наименование", "Имя");
 
             // 5. Обозначение ограждающей конструкции
-            SetCubeParamValue(cube, item.Designation, userDesignationParam, "BIMBCC_Обозначение", "ADSK_Обозначение", "ADSK_Марка", "Марка", "Обозначение");
+            SetCubeParamValue(cube, item.Designation, userDesignationParam, "BIMBCC_Обозначение", "ADSK_Обозначение", "ADSK_Марка", "Обозначение");
 
             // 6. Ориентация
             SetCubeParamValue(cube, item.Orientation, "BIMBCC_Ориентация", "ADSK_Ориентация", "Ориентация");
@@ -723,15 +719,6 @@ namespace BCCPlugIn
                     return;
                 }
             }
-
-            if (paramNames.Contains("BIMBCC_Обозначение") || paramNames.Contains("ADSK_Обозначение") || paramNames.Contains("Марка"))
-            {
-                Parameter pMark = cube.get_Parameter(BuiltInParameter.ALL_MODEL_MARK);
-                if (pMark != null && !pMark.IsReadOnly && pMark.StorageType == StorageType.String)
-                {
-                    pMark.Set(strValue ?? "");
-                }
-            }
         }
 
         private void SetCubeParamValue(FamilyInstance cube, double doubleValue, params string[] paramNames)
@@ -767,7 +754,7 @@ namespace BCCPlugIn
             }
         }
 
-        private ViewSchedule CreateOrUpdateRevitSchedule(string targetDesignationParamName, string targetAreaParamName)
+        private ViewSchedule CreateOrUpdateRevitSchedule(string targetDesignationParamName, string targetAreaParamName, HeatLossCalculationResult result)
         {
             try
             {
@@ -823,6 +810,7 @@ namespace BCCPlugIn
                 ScheduleField fieldSpaceNumber = null;
                 ScheduleField fieldSpaceName = null;
                 ScheduleField fieldDesignation = null;
+                int addedFieldsCount = 0;
 
                 for (int c = 0; c < columnCandidates.Length; c++)
                 {
@@ -832,16 +820,27 @@ namespace BCCPlugIn
                     foreach (var sf in schedulableFields)
                     {
                         string sfName = sf.GetName(_doc).Trim();
-                        if (candidates.Any(cand => sfName.Equals(cand, StringComparison.OrdinalIgnoreCase)))
+                        if (candidates.Any(cand => !string.IsNullOrEmpty(cand) && sfName.Equals(cand, StringComparison.OrdinalIgnoreCase)))
                         {
                             matchedSf = sf;
                             break;
+                        }
+
+                        if (sf.ParameterId != ElementId.InvalidElementId)
+                        {
+                            Element elem = _doc.GetElement(sf.ParameterId);
+                            if (elem != null && candidates.Any(cand => !string.IsNullOrEmpty(cand) && elem.Name.Equals(cand, StringComparison.OrdinalIgnoreCase)))
+                            {
+                                matchedSf = sf;
+                                break;
+                            }
                         }
                     }
 
                     if (matchedSf != null)
                     {
                         ScheduleField field = definition.AddField(matchedSf);
+                        addedFieldsCount++;
 
                         if (c == 0) fieldSpaceNumber = field;
                         if (c == 3) fieldSpaceName = field;
@@ -852,7 +851,13 @@ namespace BCCPlugIn
                             field.DisplayType = ScheduleFieldDisplayType.Totals;
                         }
                     }
+                    else
+                    {
+                        result?.Logs.Add($"Столбец #{c + 1} ({candidates[0]}): не найден в доступных полях.");
+                    }
                 }
+
+                result?.Logs.Add($"В спецификацию добавлено полей: {addedFieldsCount} из 15.");
 
                 if (fieldSpaceNumber != null)
                 {
@@ -877,8 +882,9 @@ namespace BCCPlugIn
 
                 return schedule;
             }
-            catch
+            catch (Exception ex)
             {
+                result?.Logs.Add($"Ошибка формирования спецификации: {ex.Message}");
                 return null;
             }
         }
