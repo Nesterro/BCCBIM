@@ -77,6 +77,25 @@ namespace BCCPlugIn
     {
         private readonly Document _doc;
 
+        private static readonly (string name, ForgeTypeId specType, string description)[] HeatLossParameters = new[]
+        {
+            ("ADSK_Номер помещения", SpecTypeId.String.Text, "Номер помещения/пространства"),
+            ("ADSK_Температура наружного воздуха", SpecTypeId.Number, "Температура наружного воздуха (°C)"),
+            ("ADSK_Температура помещения", SpecTypeId.Number, "Температура помещения (°C)"),
+            ("ADSK_Имя помещения", SpecTypeId.String.Text, "Наименование помещения/пространства"),
+            ("ADSK_Обозначение", SpecTypeId.String.Text, "Обозначение ограждающей конструкции"),
+            ("ADSK_Ориентация", SpecTypeId.String.Text, "Ориентация конструкции"),
+            ("ADSK_Длина", SpecTypeId.Length, "Длина конструкции (м)"),
+            ("ADSK_Высота", SpecTypeId.Length, "Высота конструкции (м)"),
+            ("ADSK_Площадь", SpecTypeId.Area, "Площадь конструкции (м²)"),
+            ("ADSK_Коэффициент_n", SpecTypeId.Number, "Коэффициент n"),
+            ("ADSK_Коэффициент_теплопередачи", SpecTypeId.Number, "Коэффициент теплопередачи k (Вт/(м²·°C))"),
+            ("ADSK_b1", SpecTypeId.Number, "Поправка на ориентацию b1"),
+            ("ADSK_b2", SpecTypeId.Number, "Поправка на угол b2"),
+            ("ADSK_Коэффициент_надбавки", SpecTypeId.Number, "Коэффициент надбавки (1+b1+b2)"),
+            ("ADSK_Теплопотери", SpecTypeId.Number, "Теплопотери Q (Вт)")
+        };
+
         public HeatLossEngine(Document doc)
         {
             _doc = doc ?? throw new ArgumentNullException(nameof(doc));
@@ -156,6 +175,9 @@ namespace BCCPlugIn
                 cubeSymbol.Activate();
                 _doc.Regenerate();
             }
+
+            // Ensure all 15 project parameters are bound to Generic Models in document
+            EnsureHeatLossProjectParametersExist();
 
             if (deleteExistingCubes)
             {
@@ -239,7 +261,7 @@ namespace BCCPlugIn
 
             result.Logs.Add($"Успешно обработано пространств: {result.SpacesProcessedCount}, расставлено кубиков: {result.CubesPlacedCount}.");
 
-            // Option 1: Create Revit ViewSchedule with strict exact fields
+            // Option 1: Create Revit ViewSchedule with all 15 columns
             if (createSchedule)
             {
                 progressCallback?.Invoke("Формирование спецификации в Revit...", 80.0);
@@ -264,6 +286,75 @@ namespace BCCPlugIn
 
             progressCallback?.Invoke("Готово!", 100.0);
             return result;
+        }
+
+        private void EnsureHeatLossProjectParametersExist()
+        {
+            try
+            {
+                Category genModelCat = _doc.Settings.Categories.get_Item(BuiltInCategory.OST_GenericModel);
+                if (genModelCat == null || !genModelCat.AllowsBoundParameters) return;
+
+                CategorySet catSet = _doc.Application.Create.NewCategorySet();
+                catSet.Insert(genModelCat);
+                InstanceBinding binding = _doc.Application.Create.NewInstanceBinding(catSet);
+
+                string origSharedFile = _doc.Application.SharedParametersFilename;
+                string tempSharedFile = Path.Combine(Path.GetTempPath(), "BIMBCC_HeatLoss_SharedParams.txt");
+
+                if (!File.Exists(tempSharedFile))
+                {
+                    File.WriteAllText(tempSharedFile,
+                        "# This is a Revit shared parameter file.\r\n" +
+                        "*META\tVERSION\tMINVER\r\n" +
+                        "META\t2.0\t1\r\n" +
+                        "*GROUP\tID\tNAME\r\n" +
+                        "GROUP\t1\tBIMBCC_Теплопотери\r\n" +
+                        "*PARAM\tGUID\tNAME\tDATATYPE\tDATACATEGORY\tGROUP\tVISIBLE\tDESCRIPTION\tUSERMODIFIABLE\tHIDEWHENNOVALUE\r\n"
+                    );
+                }
+
+                _doc.Application.SharedParametersFilename = tempSharedFile;
+                DefinitionFile defFile = _doc.Application.OpenSharedParameterFile();
+
+                if (defFile != null)
+                {
+                    DefinitionGroup group = defFile.Groups.get_Item("BIMBCC_Теплопотери") ?? defFile.Groups.Create("BIMBCC_Теплопотери");
+
+                    foreach (var (pName, specType, desc) in HeatLossParameters)
+                    {
+                        Definition def = group.Definitions.get_Item(pName);
+                        if (def == null)
+                        {
+                            ExternalDefinitionCreationOptions opt = new ExternalDefinitionCreationOptions(pName, specType)
+                            {
+                                Description = desc,
+                                UserModifiable = true,
+                                Visible = true
+                            };
+                            def = group.Definitions.Create(opt);
+                        }
+
+                        if (def != null)
+                        {
+                            Binding existing = _doc.ParameterBindings.get_Item(def);
+                            if (existing == null)
+                            {
+                                _doc.ParameterBindings.Insert(def, binding, GroupTypeId.Data);
+                            }
+                        }
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(origSharedFile) && File.Exists(origSharedFile))
+                {
+                    _doc.Application.SharedParametersFilename = origSharedFile;
+                }
+            }
+            catch
+            {
+                // Fallback binding
+            }
         }
 
         private List<HeatLossBoundaryItem> ExtractBoundaryItemsForSpace(
@@ -634,7 +725,18 @@ namespace BCCPlugIn
                 {
                     if (p.StorageType == StorageType.Double)
                     {
-                        p.Set(doubleValue);
+                        if (name.Contains("Площадь"))
+                        {
+                            p.Set(UnitUtils.ConvertToInternalUnits(doubleValue, UnitTypeId.SquareMeters));
+                        }
+                        else if (name.Contains("Длина") || name.Contains("Высота"))
+                        {
+                            p.Set(UnitUtils.ConvertToInternalUnits(doubleValue, UnitTypeId.Meters));
+                        }
+                        else
+                        {
+                            p.Set(doubleValue);
+                        }
                         return;
                     }
                     else if (p.StorageType == StorageType.String)
@@ -668,7 +770,6 @@ namespace BCCPlugIn
                 ScheduleDefinition definition = newSchedule.Definition;
                 var schedulableFields = definition.GetSchedulableFields();
 
-                // Strict candidate names for exact 15 columns
                 string[][] columnCandidates = new string[][]
                 {
                     new string[] { "ADSK_Номер помещения", "Номер помещения" },
@@ -711,19 +812,17 @@ namespace BCCPlugIn
                     {
                         ScheduleField field = definition.AddField(matchedSf);
 
-                        if (c == 0) fieldSpaceNumber = field; // 1. Номер помещения
-                        if (c == 3) fieldSpaceName = field;   // 4. Наименование помещения
-                        if (c == 4) fieldDesignation = field; // 5. Обозначение
+                        if (c == 0) fieldSpaceNumber = field;
+                        if (c == 3) fieldSpaceName = field;
+                        if (c == 4) fieldDesignation = field;
 
-                        // Enable totals for Area (9) and HeatLoss (15) fields
-                        if (c == 8 || c == 14)
+                        if (c == 8 || c == 14) // Area or HeatLoss
                         {
                             field.DisplayType = ScheduleFieldDisplayType.Totals;
                         }
                     }
                 }
 
-                // Apply Sorting: 1. Space Number (Header + Blank Line), 2. Space Name, 3. Designation
                 if (fieldSpaceNumber != null)
                 {
                     ScheduleSortGroupField sortNumber = new ScheduleSortGroupField(fieldSpaceNumber.FieldId);
@@ -761,7 +860,6 @@ namespace BCCPlugIn
                 if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
 
                 StringBuilder sb = new StringBuilder();
-                // Exact 15 columns requested by user
                 sb.AppendLine("1. Номер помещения;2. Температура наружного воздуха (°C);3. Температура помещения (°C);4. Наименование помещения;5. Обозначение конструкции;6. Ориентация;7. Длина (м);8. Высота (м);9. Площадь (м²);10. Коэффициент n;11. Коэффициент k;12. b1;13. b2;14. Коэффициент надбавки;15. Теплопотери (Вт)");
 
                 foreach (var item in items)
