@@ -178,12 +178,22 @@ namespace BCCPlugIn
                     FamilyInstance instance = _doc.Create.NewFamilyInstance(
                         cubePos,
                         cubeSymbol,
-                        spaceLevel,
                         StructuralType.NonStructural);
 
                     if (instance != null)
                     {
                         result.CubesPlacedCount++;
+
+                        // Associate level parameter if available
+                        if (spaceLevel != null)
+                        {
+                            Parameter pLevel = instance.get_Parameter(BuiltInParameter.FAMILY_LEVEL_PARAM)
+                                           ?? instance.get_Parameter(BuiltInParameter.SCHEDULE_LEVEL_PARAM);
+                            if (pLevel != null && !pLevel.IsReadOnly)
+                            {
+                                pLevel.Set(spaceLevel.Id);
+                            }
+                        }
 
                         // Write designation parameter (e.g. ADSK_Обозначение)
                         if (!string.IsNullOrEmpty(targetDesignationParamName))

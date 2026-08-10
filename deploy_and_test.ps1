@@ -12,8 +12,7 @@ param (
     [string]$Repo = "Nesterro/BCCBIM"
 )
 
-$ErrorActionPreference = "Stop"
-$projectDir = "C:\Users\user\Yandex.Disk\BCC\BCC PlugIn"
+$projectDir = $PSScriptRoot
 Set-Location $projectDir
 
 Write-Host "==================================================" -ForegroundColor Red
