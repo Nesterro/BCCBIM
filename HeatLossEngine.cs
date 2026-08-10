@@ -11,14 +11,55 @@ namespace BCCPlugIn
 {
     public class HeatLossBoundaryItem
     {
-        public ElementId SpaceId { get; set; }
-        public string SpaceName { get; set; }
+        // 1. Номер помещения
         public string SpaceNumber { get; set; }
+
+        // 2. Температура наружного воздуха (°C)
+        public double OutdoorTemp { get; set; } = -23.0;
+
+        // 3. Температура помещения (°C)
+        public double IndoorTemp { get; set; } = 20.0;
+
+        // 4. Наименование помещения
+        public string SpaceName { get; set; }
+
+        // 5. Обозначение ограждающей конструкции
         public string Designation { get; set; }
+
+        // 6. Ориентация
+        public string Orientation { get; set; } = "СЗ";
+
+        // 7. Длина ограждающей конструкции (м)
+        public double LengthMeters { get; set; }
+
+        // 8. Высота ограждающей конструкции (м)
+        public double HeightMeters { get; set; }
+
+        // 9. Площадь (м²)
         public double AreaSqMeters { get; set; }
+
+        // 10. Коэффициент n
+        public double CoeffN { get; set; } = 1.0;
+
+        // 11. Коэффициент теплопередачи k (Вт/(м²·°C))
+        public double CoeffK { get; set; } = 1.0;
+
+        // 12. b1 - поправка на ориентацию
+        public double B1 { get; set; } = 0.1;
+
+        // 13. b2 - поправка на угол
+        public double B2 { get; set; } = 0.0;
+
+        // 14. Коэффициент надбавки (1 + b1 + b2)
+        public double CoeffAllowance => 1.0 + B1 + B2;
+
+        // 15. Теплопотери (Вт) = (t_int - t_ext) * A * n * k * (1 + b1 + b2)
+        public double HeatLossWatts => (IndoorTemp - OutdoorTemp) * AreaSqMeters * CoeffN * CoeffK * CoeffAllowance;
+
+        // Additional internal references
+        public ElementId SpaceId { get; set; }
         public ElementId BoundingElementId { get; set; }
         public string BoundingCategoryName { get; set; }
-        public string ElementName { get; set; }
     }
 
     public class HeatLossCalculationResult
@@ -89,6 +130,7 @@ namespace BCCPlugIn
             string linkedParamName,
             string targetDesignationParamName,
             string targetAreaParamName,
+            double outdoorTemp,
             bool deleteExistingCubes,
             bool createSchedule,
             bool exportCsv,
@@ -142,7 +184,7 @@ namespace BCCPlugIn
                 double progressPct = ((double)(i + 1) / totalSpaces) * 70.0;
                 progressCallback?.Invoke($"Анализ помещения/пространства {i + 1} из {totalSpaces}: {space.Name} ({space.Number})...", progressPct);
 
-                List<HeatLossBoundaryItem> items = ExtractBoundaryItemsForSpace(space, calculator, selectedLinkInstance, linkedParamName);
+                List<HeatLossBoundaryItem> items = ExtractBoundaryItemsForSpace(space, calculator, selectedLinkInstance, linkedParamName, outdoorTemp);
 
                 if (items.Count == 0)
                 {
@@ -187,9 +229,8 @@ namespace BCCPlugIn
                             }
                         }
 
-                        WriteDesignationToCube(instance, item.Designation, targetDesignationParamName);
-                        WriteAreaToCube(instance, item.AreaSqMeters, targetAreaParamName);
-                        WriteSpaceInfoToCube(instance, space);
+                        // Write all 15 parameters to the cube instance
+                        WriteAllParametersToCube(instance, item, targetDesignationParamName, targetAreaParamName);
                     }
 
                     cubeIndex++;
@@ -229,10 +270,14 @@ namespace BCCPlugIn
             Space space,
             SpatialElementGeometryCalculator calculator,
             RevitLinkInstance targetLinkInstance,
-            string linkedParamName)
+            string linkedParamName,
+            double outdoorTemp)
         {
             var boundaryItems = new List<HeatLossBoundaryItem>();
             var designationMap = new Dictionary<string, HeatLossBoundaryItem>();
+
+            double spaceHeightFt = space.UnboundedHeight > 0 ? space.UnboundedHeight : 9.84252; // default 3 meters
+            double spaceHeightMeters = UnitUtils.ConvertFromInternalUnits(spaceHeightFt, UnitTypeId.Meters);
 
             try
             {
@@ -286,6 +331,7 @@ namespace BCCPlugIn
                         string wallDesignation = GetElementDesignation(boundingElement, linkedParamName);
                         double insertsTotalAreaSqM = 0.0;
 
+                        // Check window and door inserts in wall
                         if (boundingElement is Wall wall && linkDoc != null)
                         {
                             IList<ElementId> insertIds = wall.FindInserts(true, false, false, false);
@@ -297,11 +343,12 @@ namespace BCCPlugIn
                                 string insertDesignation = GetElementDesignation(insertElem, linkedParamName);
                                 if (string.IsNullOrWhiteSpace(insertDesignation)) continue;
 
-                                double insertAreaSqM = GetInsertAreaSqMeters(insertElem);
+                                (double insertWidthM, double insertHeightM, double insertAreaSqM) = GetInsertDimensions(insertElem);
                                 if (insertAreaSqM > 0.001)
                                 {
                                     insertsTotalAreaSqM += insertAreaSqM;
-                                    AddOrAggregateItem(designationMap, space, insertDesignation, insertAreaSqM, insertElem);
+                                    double kVal = GetThermalTransmittanceK(insertElem);
+                                    AddOrAggregateItem(designationMap, space, insertDesignation, insertWidthM, insertHeightM, insertAreaSqM, kVal, outdoorTemp, insertElem);
                                 }
                             }
                         }
@@ -311,7 +358,11 @@ namespace BCCPlugIn
                             double netAreaSqM = Math.Max(0.0, areaSqM - insertsTotalAreaSqM);
                             if (netAreaSqM > 0.001)
                             {
-                                AddOrAggregateItem(designationMap, space, wallDesignation, netAreaSqM, boundingElement);
+                                double heightM = spaceHeightMeters;
+                                double lengthM = heightM > 0 ? netAreaSqM / heightM : Math.Sqrt(netAreaSqM);
+                                double kVal = GetThermalTransmittanceK(boundingElement);
+
+                                AddOrAggregateItem(designationMap, space, wallDesignation, lengthM, heightM, netAreaSqM, kVal, outdoorTemp, boundingElement);
                             }
                         }
                     }
@@ -329,39 +380,57 @@ namespace BCCPlugIn
             Dictionary<string, HeatLossBoundaryItem> map,
             Space space,
             string designation,
+            double lengthM,
+            double heightM,
             double areaSqM,
+            double kVal,
+            double outdoorTemp,
             Element element)
         {
             designation = designation.Trim();
             if (map.ContainsKey(designation))
             {
                 map[designation].AreaSqMeters += areaSqM;
+                if (map[designation].HeightMeters > 0)
+                {
+                    map[designation].LengthMeters = map[designation].AreaSqMeters / map[designation].HeightMeters;
+                }
             }
             else
             {
                 map[designation] = new HeatLossBoundaryItem
                 {
                     SpaceId = space.Id,
-                    SpaceName = space.Name,
-                    SpaceNumber = space.Number,
+                    SpaceNumber = space.Number ?? "",
+                    SpaceName = space.Name ?? "",
+                    OutdoorTemp = outdoorTemp,
+                    IndoorTemp = 20.0,
                     Designation = designation,
+                    Orientation = "СЗ",
+                    LengthMeters = lengthM,
+                    HeightMeters = heightM,
                     AreaSqMeters = areaSqM,
+                    CoeffN = 1.0,
+                    CoeffK = kVal,
+                    B1 = 0.1,
+                    B2 = 0.0,
                     BoundingElementId = element.Id,
-                    BoundingCategoryName = element.Category?.Name ?? "Элемент",
-                    ElementName = element.Name
+                    BoundingCategoryName = element.Category?.Name ?? "Элемент"
                 };
             }
         }
 
-        private double GetInsertAreaSqMeters(Element insertElem)
+        private (double widthM, double heightM, double areaSqM) GetInsertDimensions(Element insertElem)
         {
             double widthFt = GetParamDoubleValue(insertElem, "Ширина", "Width", "ADSK_Размер_Ширина");
             double heightFt = GetParamDoubleValue(insertElem, "Высота", "Height", "ADSK_Размер_Высота");
 
             if (widthFt > 0 && heightFt > 0)
             {
-                double areaSqFt = widthFt * heightFt;
-                return UnitUtils.ConvertFromInternalUnits(areaSqFt, UnitTypeId.SquareMeters);
+                double widthM = UnitUtils.ConvertFromInternalUnits(widthFt, UnitTypeId.Meters);
+                double heightM = UnitUtils.ConvertFromInternalUnits(heightFt, UnitTypeId.Meters);
+                double areaSqM = widthM * heightM;
+                return (widthM, heightM, areaSqM);
             }
 
             BoundingBoxXYZ bbox = insertElem.get_BoundingBox(null);
@@ -370,12 +439,45 @@ namespace BCCPlugIn
                 double dx = Math.Abs(bbox.Max.X - bbox.Min.X);
                 double dy = Math.Abs(bbox.Max.Y - bbox.Min.Y);
                 double dz = Math.Abs(bbox.Max.Z - bbox.Min.Z);
-                double span = Math.Max(dx, dy);
-                double areaSqFt = span * dz;
-                return UnitUtils.ConvertFromInternalUnits(areaSqFt, UnitTypeId.SquareMeters);
+                double spanFt = Math.Max(dx, dy);
+                double widthM = UnitUtils.ConvertFromInternalUnits(spanFt, UnitTypeId.Meters);
+                double heightM = UnitUtils.ConvertFromInternalUnits(dz, UnitTypeId.Meters);
+                double areaSqM = widthM * heightM;
+                return (widthM, heightM, areaSqM);
             }
 
-            return 0.0;
+            return (0.0, 0.0, 0.0);
+        }
+
+        private double GetThermalTransmittanceK(Element element)
+        {
+            // 1. Look for thermal resistance R (ADSK_Сопротивление_теплопередаче / R)
+            double rVal = GetParamDoubleValue(element,
+                "ADSK_Сопротивление_теплопередаче",
+                "Сопротивление_теплопередаче",
+                "R_сопротивление",
+                "R");
+
+            if (rVal > 0.0001)
+            {
+                return 1.0 / rVal;
+            }
+
+            // 2. Look for thermal transmittance k / U (ADSK_Коэффициент_теплопередачи / k / U-Value)
+            double kVal = GetParamDoubleValue(element,
+                "ADSK_Коэффициент_теплопередачи",
+                "Коэффициент_теплопередачи",
+                "k",
+                "U-Value",
+                "U_Value");
+
+            if (kVal > 0.0001)
+            {
+                return kVal;
+            }
+
+            // Default fallback
+            return 1.0;
         }
 
         private double GetParamDoubleValue(Element element, params string[] paramNames)
@@ -453,116 +555,98 @@ namespace BCCPlugIn
             return null;
         }
 
-        private void WriteDesignationToCube(FamilyInstance cube, string designation, string userParamName)
+        private void WriteAllParametersToCube(FamilyInstance cube, HeatLossBoundaryItem item, string userDesignationParam, string userAreaParam)
         {
-            string[] candidates = new string[]
-            {
-                userParamName,
-                "ADSK_Обозначение",
-                "ADSK_Марка",
-                "Марка",
-                "Обозначение",
-                "Комментарии"
-            };
+            if (cube == null || item == null) return;
 
-            foreach (string candidate in candidates)
-            {
-                if (string.IsNullOrWhiteSpace(candidate)) continue;
+            // 1. Номер помещения
+            SetCubeParamValue(cube, item.SpaceNumber, "ADSK_Номер помещения", "ADSK_Номер пространства", "Номер помещения", "Номер пространства", "Номер");
 
-                Parameter p = cube.LookupParameter(candidate);
+            // 2. Температура наружного воздуха
+            SetCubeParamValue(cube, item.OutdoorTemp, "ADSK_Температура наружного воздуха", "Температура наружного воздуха", "t_ext");
+
+            // 3. Температура помещения
+            SetCubeParamValue(cube, item.IndoorTemp, "ADSK_Температура помещения", "Температура помещения", "t_int");
+
+            // 4. Наименование помещения
+            SetCubeParamValue(cube, item.SpaceName, "ADSK_Имя помещения", "ADSK_Имя пространства", "Имя помещения", "Имя пространства", "Наименование", "Имя");
+
+            // 5. Обозначение ограждающей конструкции
+            SetCubeParamValue(cube, item.Designation, userDesignationParam, "ADSK_Обозначение", "ADSK_Марка", "Марка", "Обозначение");
+
+            // 6. Ориентация
+            SetCubeParamValue(cube, item.Orientation, "ADSK_Ориентация", "Ориентация");
+
+            // 7. Длина конструкции
+            SetCubeParamValue(cube, item.LengthMeters, "ADSK_Длина", "Длина");
+
+            // 8. Высота конструкции
+            SetCubeParamValue(cube, item.HeightMeters, "ADSK_Высота", "Высота");
+
+            // 9. Площадь
+            SetCubeParamValue(cube, item.AreaSqMeters, userAreaParam, "ADSK_Площадь", "Площадь", "ADSK_Значение");
+
+            // 10. Коэффициент n
+            SetCubeParamValue(cube, item.CoeffN, "ADSK_Коэффициент_n", "Коэффициент_n", "n");
+
+            // 11. Коэффициент теплопередачи k
+            SetCubeParamValue(cube, item.CoeffK, "ADSK_Коэффициент_теплопередачи", "Коэффициент_теплопередачи", "k");
+
+            // 12. b1
+            SetCubeParamValue(cube, item.B1, "ADSK_b1", "b1");
+
+            // 13. b2
+            SetCubeParamValue(cube, item.B2, "ADSK_b2", "b2");
+
+            // 14. Коэффициент надбавки
+            SetCubeParamValue(cube, item.CoeffAllowance, "ADSK_Коэффициент_надбавки", "Коэффициент_надбавки", "Надбавка");
+
+            // 15. Теплопотери (Вт)
+            SetCubeParamValue(cube, item.HeatLossWatts, "ADSK_Теплопотери", "Теплопотери", "Q");
+        }
+
+        private void SetCubeParamValue(FamilyInstance cube, string strValue, params string[] paramNames)
+        {
+            foreach (string name in paramNames)
+            {
+                if (string.IsNullOrWhiteSpace(name)) continue;
+                Parameter p = cube.LookupParameter(name);
                 if (p != null && !p.IsReadOnly && p.StorageType == StorageType.String)
                 {
-                    p.Set(designation);
+                    p.Set(strValue ?? "");
                     return;
                 }
             }
 
-            Parameter pMark = cube.get_Parameter(BuiltInParameter.ALL_MODEL_MARK);
-            if (pMark != null && !pMark.IsReadOnly && pMark.StorageType == StorageType.String)
+            // Fallback mark check
+            if (paramNames.Contains("ADSK_Обозначение") || paramNames.Contains("Марка"))
             {
-                pMark.Set(designation);
+                Parameter pMark = cube.get_Parameter(BuiltInParameter.ALL_MODEL_MARK);
+                if (pMark != null && !pMark.IsReadOnly && pMark.StorageType == StorageType.String)
+                {
+                    pMark.Set(strValue ?? "");
+                }
             }
         }
 
-        private void WriteAreaToCube(FamilyInstance cube, double areaSqM, string userParamName)
+        private void SetCubeParamValue(FamilyInstance cube, double doubleValue, params string[] paramNames)
         {
-            string[] candidates = new string[]
+            foreach (string name in paramNames)
             {
-                userParamName,
-                "ADSK_Площадь",
-                "Площадь",
-                "ADSK_Значение",
-                "Значение"
-            };
-
-            foreach (string candidate in candidates)
-            {
-                if (string.IsNullOrWhiteSpace(candidate)) continue;
-
-                Parameter p = cube.LookupParameter(candidate);
+                if (string.IsNullOrWhiteSpace(name)) continue;
+                Parameter p = cube.LookupParameter(name);
                 if (p != null && !p.IsReadOnly)
                 {
                     if (p.StorageType == StorageType.Double)
                     {
-                        double internalArea = UnitUtils.ConvertToInternalUnits(areaSqM, UnitTypeId.SquareMeters);
-                        p.Set(internalArea);
+                        p.Set(doubleValue);
                         return;
                     }
                     else if (p.StorageType == StorageType.String)
                     {
-                        p.Set(areaSqM.ToString("F2"));
+                        p.Set(doubleValue.ToString("F2"));
                         return;
                     }
-                }
-            }
-        }
-
-        private void WriteSpaceInfoToCube(FamilyInstance cube, Space space)
-        {
-            if (cube == null || space == null) return;
-
-            // Room / Space Number
-            string[] numberCandidates = new string[]
-            {
-                "ADSK_Номер помещения",
-                "ADSK_Номер пространства",
-                "Номер помещения",
-                "Номер пространства",
-                "Номер_помещения",
-                "Номер_пространства",
-                "Номер"
-            };
-
-            foreach (string candidate in numberCandidates)
-            {
-                Parameter p = cube.LookupParameter(candidate);
-                if (p != null && !p.IsReadOnly && p.StorageType == StorageType.String)
-                {
-                    p.Set(space.Number ?? "");
-                    break;
-                }
-            }
-
-            // Room / Space Name
-            string[] nameCandidates = new string[]
-            {
-                "ADSK_Имя помещения",
-                "ADSK_Имя пространства",
-                "Имя помещения",
-                "Имя пространства",
-                "Имя_помещения",
-                "Имя_пространства",
-                "Имя",
-                "Наименование"
-            };
-
-            foreach (string candidate in nameCandidates)
-            {
-                Parameter p = cube.LookupParameter(candidate);
-                if (p != null && !p.IsReadOnly && p.StorageType == StorageType.String)
-                {
-                    p.Set(space.Name ?? "");
-                    break;
                 }
             }
         }
@@ -594,12 +678,10 @@ namespace BCCPlugIn
                 ScheduleField fieldDesignation = null;
                 ScheduleField fieldArea = null;
 
-                // Add ONLY required clean parameters (Room Number, Room Name, Designation, Area, Count)
                 foreach (var sf in schedulableFields)
                 {
                     string fName = sf.GetName(_doc);
 
-                    // Skip unnecessary parameters (Family, Type, Level, Category, Image, etc.)
                     if (fName.IndexOf("Семейство", StringComparison.OrdinalIgnoreCase) >= 0 ||
                         fName.IndexOf("Тип", StringComparison.OrdinalIgnoreCase) >= 0 ||
                         fName.IndexOf("Категория", StringComparison.OrdinalIgnoreCase) >= 0 ||
@@ -641,7 +723,6 @@ namespace BCCPlugIn
                     }
                 }
 
-                // Add Count field
                 var countSf = schedulableFields.FirstOrDefault(sf =>
                     sf.GetName(_doc).IndexOf("Число", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     sf.GetName(_doc).IndexOf("Количество", StringComparison.OrdinalIgnoreCase) >= 0 ||
@@ -651,7 +732,6 @@ namespace BCCPlugIn
                     definition.AddField(countSf);
                 }
 
-                // Grouping & Sorting by Room Number then Designation
                 if (fieldNumber != null)
                 {
                     ScheduleSortGroupField sortGroupNumber = new ScheduleSortGroupField(fieldNumber.FieldId);
@@ -682,11 +762,27 @@ namespace BCCPlugIn
                 if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
 
                 StringBuilder sb = new StringBuilder();
-                sb.AppendLine("Номер помещения;Наименование помещения;Обозначение конструкции;Категория;Площадь (м2)");
+                // Exact 15 columns requested by user
+                sb.AppendLine("1. Номер помещения;2. Температура наружного воздуха (°C);3. Температура помещения (°C);4. Наименование помещения;5. Обозначение конструкций;6. Ориентация;7. Длина (м);8. Высота (м);9. Площадь (м²);10. Коэффициент n;11. Коэффициент k;12. b1;13. b2;14. Коэффициент надбавки;15. Теплопотери (Вт)");
 
                 foreach (var item in items)
                 {
-                    string line = $"{EscapeCsv(item.SpaceNumber)};{EscapeCsv(item.SpaceName)};{EscapeCsv(item.Designation)};{EscapeCsv(item.BoundingCategoryName)};{item.AreaSqMeters:F2}";
+                    string line = $"{EscapeCsv(item.SpaceNumber)};" +
+                                  $"{item.OutdoorTemp:F1};" +
+                                  $"{item.IndoorTemp:F1};" +
+                                  $"{EscapeCsv(item.SpaceName)};" +
+                                  $"{EscapeCsv(item.Designation)};" +
+                                  $"{EscapeCsv(item.Orientation)};" +
+                                  $"{item.LengthMeters:F2};" +
+                                  $"{item.HeightMeters:F2};" +
+                                  $"{item.AreaSqMeters:F2};" +
+                                  $"{item.CoeffN:F2};" +
+                                  $"{item.CoeffK:F3};" +
+                                  $"{item.B1:F2};" +
+                                  $"{item.B2:F2};" +
+                                  $"{item.CoeffAllowance:F2};" +
+                                  $"{item.HeatLossWatts:F1}";
+
                     sb.AppendLine(line);
                 }
 

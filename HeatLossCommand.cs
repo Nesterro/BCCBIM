@@ -75,6 +75,7 @@ namespace BCCPlugIn
                             window.LinkedParamName,
                             window.TargetDesignationParamName,
                             window.TargetAreaParamName,
+                            window.OutdoorTemp,
                             window.DeleteExistingCubes,
                             window.CreateSchedule,
                             window.ExportCsv,

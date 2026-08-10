@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Windows;
@@ -22,6 +23,7 @@ namespace BCCPlugIn
         public string LinkedParamName { get; private set; } = "ADSK_Обозначение";
         public string TargetDesignationParamName { get; private set; } = "ADSK_Обозначение";
         public string TargetAreaParamName { get; private set; } = "ADSK_Площадь";
+        public double OutdoorTemp { get; private set; } = -23.0;
         public bool DeleteExistingCubes { get; private set; } = true;
         public bool CreateSchedule { get; private set; } = true;
         public bool ExportCsv { get; private set; } = true;
@@ -188,6 +190,17 @@ namespace BCCPlugIn
                     return;
                 }
                 SelectedLevelId = level.Id;
+            }
+
+            string outTempText = OutdoorTempTextBox.Text?.Replace(',', '.').Trim();
+            if (double.TryParse(outTempText, NumberStyles.Any, CultureInfo.InvariantCulture, out double parsedTemp))
+            {
+                OutdoorTemp = parsedTemp;
+            }
+            else
+            {
+                MessageBox.Show("Укажите корректную температуру наружного воздуха (например, -23).", "Внимание", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
             }
 
             LinkedParamName = LinkedParamTextBox.Text?.Trim();
