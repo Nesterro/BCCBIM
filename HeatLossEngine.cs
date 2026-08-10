@@ -239,7 +239,7 @@ namespace BCCPlugIn
 
             result.Logs.Add($"Успешно обработано пространств: {result.SpacesProcessedCount}, расставлено кубиков: {result.CubesPlacedCount}.");
 
-            // Option 1: Create Revit ViewSchedule
+            // Option 1: Create Revit ViewSchedule with strict exact fields
             if (createSchedule)
             {
                 progressCallback?.Invoke("Формирование спецификации в Revit...", 80.0);
@@ -276,7 +276,7 @@ namespace BCCPlugIn
             var boundaryItems = new List<HeatLossBoundaryItem>();
             var designationMap = new Dictionary<string, HeatLossBoundaryItem>();
 
-            double spaceHeightFt = space.UnboundedHeight > 0 ? space.UnboundedHeight : 9.84252; // default 3 meters
+            double spaceHeightFt = space.UnboundedHeight > 0 ? space.UnboundedHeight : 9.84252;
             double spaceHeightMeters = UnitUtils.ConvertFromInternalUnits(spaceHeightFt, UnitTypeId.Meters);
 
             try
@@ -331,7 +331,6 @@ namespace BCCPlugIn
                         string wallDesignation = GetElementDesignation(boundingElement, linkedParamName);
                         double insertsTotalAreaSqM = 0.0;
 
-                        // Check window and door inserts in wall
                         if (boundingElement is Wall wall && linkDoc != null)
                         {
                             IList<ElementId> insertIds = wall.FindInserts(true, false, false, false);
@@ -451,7 +450,6 @@ namespace BCCPlugIn
 
         private double GetThermalTransmittanceK(Element element)
         {
-            // 1. Look for thermal resistance R (ADSK_Сопротивление_теплопередаче / R)
             double rVal = GetParamDoubleValue(element,
                 "ADSK_Сопротивление_теплопередаче",
                 "Сопротивление_теплопередаче",
@@ -463,7 +461,6 @@ namespace BCCPlugIn
                 return 1.0 / rVal;
             }
 
-            // 2. Look for thermal transmittance k / U (ADSK_Коэффициент_теплопередачи / k / U-Value)
             double kVal = GetParamDoubleValue(element,
                 "ADSK_Коэффициент_теплопередачи",
                 "Коэффициент_теплопередачи",
@@ -476,7 +473,6 @@ namespace BCCPlugIn
                 return kVal;
             }
 
-            // Default fallback
             return 1.0;
         }
 
@@ -618,7 +614,6 @@ namespace BCCPlugIn
                 }
             }
 
-            // Fallback mark check
             if (paramNames.Contains("ADSK_Обозначение") || paramNames.Contains("Марка"))
             {
                 Parameter pMark = cube.get_Parameter(BuiltInParameter.ALL_MODEL_MARK);
@@ -673,77 +668,81 @@ namespace BCCPlugIn
                 ScheduleDefinition definition = newSchedule.Definition;
                 var schedulableFields = definition.GetSchedulableFields();
 
-                ScheduleField fieldNumber = null;
-                ScheduleField fieldName = null;
-                ScheduleField fieldDesignation = null;
-                ScheduleField fieldArea = null;
-
-                foreach (var sf in schedulableFields)
+                // Strict candidate names for exact 15 columns
+                string[][] columnCandidates = new string[][]
                 {
-                    string fName = sf.GetName(_doc);
+                    new string[] { "ADSK_Номер помещения", "Номер помещения" },
+                    new string[] { "ADSK_Температура наружного воздуха", "Температура наружного воздуха" },
+                    new string[] { "ADSK_Температура помещения", "Температура помещения" },
+                    new string[] { "ADSK_Имя помещения", "Имя помещения", "ADSK_Имя пространства", "Имя пространства" },
+                    new string[] { targetDesignationParamName, "ADSK_Обозначение", "Обозначение" },
+                    new string[] { "ADSK_Ориентация", "Ориентация" },
+                    new string[] { "ADSK_Длина", "Длина" },
+                    new string[] { "ADSK_Высота", "Высота" },
+                    new string[] { targetAreaParamName, "ADSK_Площадь", "Площадь" },
+                    new string[] { "ADSK_Коэффициент_n", "Коэффициент_n" },
+                    new string[] { "ADSK_Коэффициент_теплопередачи", "Коэффициент_теплопередачи" },
+                    new string[] { "ADSK_b1", "b1" },
+                    new string[] { "ADSK_b2", "b2" },
+                    new string[] { "ADSK_Коэффициент_надбавки", "Коэффициент_надбавки" },
+                    new string[] { "ADSK_Теплопотери", "Теплопотери" }
+                };
 
-                    if (fName.IndexOf("Семейство", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        fName.IndexOf("Тип", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        fName.IndexOf("Категория", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        fName.IndexOf("Уровень", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        fName.IndexOf("Изображение", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        fName.IndexOf("Комментарии", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        continue;
-                    }
+                ScheduleField fieldSpaceNumber = null;
+                ScheduleField fieldSpaceName = null;
+                ScheduleField fieldDesignation = null;
 
-                    if (fName.IndexOf("Номер помещения", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        fName.IndexOf("Номер пространства", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        fName.IndexOf("ADSK_Номер", StringComparison.OrdinalIgnoreCase) >= 0)
+                for (int c = 0; c < columnCandidates.Length; c++)
+                {
+                    var candidates = columnCandidates[c];
+                    SchedulableField matchedSf = null;
+
+                    foreach (var sf in schedulableFields)
                     {
-                        if (fieldNumber == null) fieldNumber = definition.AddField(sf);
-                    }
-                    else if (fName.IndexOf("Имя помещения", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                             fName.IndexOf("Имя пространства", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                             fName.IndexOf("ADSK_Имя", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        if (fieldName == null) fieldName = definition.AddField(sf);
-                    }
-                    else if (fName.IndexOf(targetDesignationParamName, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                             fName.IndexOf("ADSK_Обозначение", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                             fName.IndexOf("Марка", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                             fName.IndexOf("Обозначение", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        if (fieldDesignation == null) fieldDesignation = definition.AddField(sf);
-                    }
-                    else if (fName.IndexOf(targetAreaParamName, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                             fName.IndexOf("ADSK_Площадь", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                             fName.IndexOf("Площадь", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        if (fieldArea == null)
+                        string sfName = sf.GetName(_doc).Trim();
+                        if (candidates.Any(cand => sfName.Equals(cand, StringComparison.OrdinalIgnoreCase)))
                         {
-                            fieldArea = definition.AddField(sf);
-                            fieldArea.DisplayType = ScheduleFieldDisplayType.Totals;
+                            matchedSf = sf;
+                            break;
+                        }
+                    }
+
+                    if (matchedSf != null)
+                    {
+                        ScheduleField field = definition.AddField(matchedSf);
+
+                        if (c == 0) fieldSpaceNumber = field; // 1. Номер помещения
+                        if (c == 3) fieldSpaceName = field;   // 4. Наименование помещения
+                        if (c == 4) fieldDesignation = field; // 5. Обозначение
+
+                        // Enable totals for Area (9) and HeatLoss (15) fields
+                        if (c == 8 || c == 14)
+                        {
+                            field.DisplayType = ScheduleFieldDisplayType.Totals;
                         }
                     }
                 }
 
-                var countSf = schedulableFields.FirstOrDefault(sf =>
-                    sf.GetName(_doc).IndexOf("Число", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    sf.GetName(_doc).IndexOf("Количество", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    sf.GetName(_doc).IndexOf("Count", StringComparison.OrdinalIgnoreCase) >= 0);
-                if (countSf != null)
+                // Apply Sorting: 1. Space Number (Header + Blank Line), 2. Space Name, 3. Designation
+                if (fieldSpaceNumber != null)
                 {
-                    definition.AddField(countSf);
+                    ScheduleSortGroupField sortNumber = new ScheduleSortGroupField(fieldSpaceNumber.FieldId);
+                    sortNumber.ShowHeader = true;
+                    sortNumber.ShowBlankLine = true;
+                    definition.AddSortGroupField(sortNumber);
                 }
 
-                if (fieldNumber != null)
+                if (fieldSpaceName != null)
                 {
-                    ScheduleSortGroupField sortGroupNumber = new ScheduleSortGroupField(fieldNumber.FieldId);
-                    sortGroupNumber.ShowHeader = true;
-                    sortGroupNumber.ShowBlankLine = true;
-                    definition.AddSortGroupField(sortGroupNumber);
+                    ScheduleSortGroupField sortName = new ScheduleSortGroupField(fieldSpaceName.FieldId);
+                    sortName.ShowHeader = false;
+                    definition.AddSortGroupField(sortName);
                 }
 
                 if (fieldDesignation != null)
                 {
-                    ScheduleSortGroupField sortGroupDesig = new ScheduleSortGroupField(fieldDesignation.FieldId);
-                    definition.AddSortGroupField(sortGroupDesig);
+                    ScheduleSortGroupField sortDesig = new ScheduleSortGroupField(fieldDesignation.FieldId);
+                    definition.AddSortGroupField(sortDesig);
                 }
 
                 return newSchedule;
@@ -763,7 +762,7 @@ namespace BCCPlugIn
 
                 StringBuilder sb = new StringBuilder();
                 // Exact 15 columns requested by user
-                sb.AppendLine("1. Номер помещения;2. Температура наружного воздуха (°C);3. Температура помещения (°C);4. Наименование помещения;5. Обозначение конструкций;6. Ориентация;7. Длина (м);8. Высота (м);9. Площадь (м²);10. Коэффициент n;11. Коэффициент k;12. b1;13. b2;14. Коэффициент надбавки;15. Теплопотери (Вт)");
+                sb.AppendLine("1. Номер помещения;2. Температура наружного воздуха (°C);3. Температура помещения (°C);4. Наименование помещения;5. Обозначение конструкции;6. Ориентация;7. Длина (м);8. Высота (м);9. Площадь (м²);10. Коэффициент n;11. Коэффициент k;12. b1;13. b2;14. Коэффициент надбавки;15. Теплопотери (Вт)");
 
                 foreach (var item in items)
                 {
