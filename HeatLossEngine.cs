@@ -77,6 +77,25 @@ namespace BCCPlugIn
     {
         private readonly Document _doc;
 
+        private static readonly (string name, ForgeTypeId specType, string description)[] HeatLossParameters = new[]
+        {
+            ("BIMBCC_Номер помещения", SpecTypeId.String.Text, "Номер помещения/пространства"),
+            ("BIMBCC_Температура наружного воздуха", SpecTypeId.Number, "Температура наружного воздуха (°C)"),
+            ("BIMBCC_Температура помещения", SpecTypeId.Number, "Температура помещения (°C)"),
+            ("BIMBCC_Имя помещения", SpecTypeId.String.Text, "Наименование помещения/пространства"),
+            ("BIMBCC_Обозначение", SpecTypeId.String.Text, "Обозначение ограждающей конструкции"),
+            ("BIMBCC_Ориентация", SpecTypeId.String.Text, "Ориентация конструкции"),
+            ("BIMBCC_Длина", SpecTypeId.Length, "Длина конструкции (м)"),
+            ("BIMBCC_Высота", SpecTypeId.Length, "Высота конструкции (м)"),
+            ("BIMBCC_Площадь", SpecTypeId.Area, "Площадь конструкции (м²)"),
+            ("BIMBCC_Коэффициент_n", SpecTypeId.Number, "Коэффициент n"),
+            ("BIMBCC_Коэффициент_теплопередачи", SpecTypeId.Number, "Коэффициент теплопередачи k (Вт/(м²·°C))"),
+            ("BIMBCC_b1", SpecTypeId.Number, "Поправка на ориентацию b1"),
+            ("BIMBCC_b2", SpecTypeId.Number, "Поправка на угол b2"),
+            ("BIMBCC_Коэффициент_надбавки", SpecTypeId.Number, "Коэффициент надбавки (1+b1+b2)"),
+            ("BIMBCC_Теплопотери", SpecTypeId.Number, "Теплопотери Q (Вт)")
+        };
+
         public HeatLossEngine(Document doc)
         {
             _doc = doc ?? throw new ArgumentNullException(nameof(doc));
@@ -177,16 +196,28 @@ namespace BCCPlugIn
                 catSet.Insert(genModelCat);
                 InstanceBinding binding = _doc.Application.Create.NewInstanceBinding(catSet);
 
-                string sharedDir = @"C:\ProgramData\BIMBCC";
-                if (!Directory.Exists(sharedDir)) Directory.CreateDirectory(sharedDir);
+                DefinitionFile defFile = null;
 
-                string sharedFilePath = Path.Combine(sharedDir, "BIMBCC_HeatLoss_SharedParams.txt");
+                // 1. Try existing active shared parameter file in Revit application
+                try
+                {
+                    defFile = _doc.Application.OpenSharedParameterFile();
+                }
+                catch { }
 
-                File.WriteAllText(sharedFilePath, BuildSharedParameterFileContent(), Encoding.Unicode);
+                // 2. If no valid shared parameter file, create one with UTF-8 with BOM in C:\ProgramData\BIMBCC
+                if (defFile == null)
+                {
+                    string sharedDir = @"C:\ProgramData\BIMBCC";
+                    if (!Directory.Exists(sharedDir)) Directory.CreateDirectory(sharedDir);
 
-                string origSharedFile = _doc.Application.SharedParametersFilename;
-                _doc.Application.SharedParametersFilename = sharedFilePath;
-                DefinitionFile defFile = _doc.Application.OpenSharedParameterFile();
+                    string sharedFilePath = Path.Combine(sharedDir, "BIMBCC_HeatLoss_SharedParams.txt");
+
+                    File.WriteAllText(sharedFilePath, BuildSharedParameterFileContent(), new UTF8Encoding(true));
+
+                    _doc.Application.SharedParametersFilename = sharedFilePath;
+                    defFile = _doc.Application.OpenSharedParameterFile();
+                }
 
                 if (defFile == null)
                 {
@@ -197,30 +228,54 @@ namespace BCCPlugIn
                 DefinitionGroup group = defFile.Groups.get_Item("BIMBCC_Теплопотери");
                 if (group == null)
                 {
-                    result?.Logs.Add("Группа 'BIMBCC_Теплопотери' не найдена в ФОП.");
-                    return;
+                    try
+                    {
+                        group = defFile.Groups.Create("BIMBCC_Теплопотери");
+                    }
+                    catch
+                    {
+                        group = defFile.Groups.get_Item("BIMBCC_Теплопотери");
+                    }
                 }
 
                 int boundCount = 0;
-                foreach (Definition def in group.Definitions)
+                foreach (var (pName, specType, desc) in HeatLossParameters)
                 {
-                    if (def is ExternalDefinition extDef)
+                    Definition def = null;
+                    if (group != null)
                     {
-                        bool ok = _doc.ParameterBindings.Insert(extDef, binding, BuiltInParameterGroup.PG_DATA);
+                        def = group.Definitions.get_Item(pName);
+                        if (def == null)
+                        {
+                            try
+                            {
+                                ExternalDefinitionCreationOptions opt = new ExternalDefinitionCreationOptions(pName, specType)
+                                {
+                                    Description = desc,
+                                    UserModifiable = true,
+                                    Visible = true
+                                };
+                                def = group.Definitions.Create(opt);
+                            }
+                            catch
+                            {
+                                def = group.Definitions.get_Item(pName);
+                            }
+                        }
+                    }
+
+                    if (def != null)
+                    {
+                        bool ok = _doc.ParameterBindings.Insert(def, binding, BuiltInParameterGroup.PG_DATA);
                         if (!ok)
                         {
-                            ok = _doc.ParameterBindings.ReInsert(extDef, binding, BuiltInParameterGroup.PG_DATA);
+                            ok = _doc.ParameterBindings.ReInsert(def, binding, BuiltInParameterGroup.PG_DATA);
                         }
                         if (ok) boundCount++;
                     }
                 }
 
-                result?.Logs.Add($"Этап 1: Успешно привязано проектных параметров к Обобщенным моделям: {boundCount} из {group.Definitions.Size}.");
-
-                if (!string.IsNullOrEmpty(origSharedFile) && File.Exists(origSharedFile))
-                {
-                    _doc.Application.SharedParametersFilename = origSharedFile;
-                }
+                result?.Logs.Add($"Этап 1: Успешно привязано проектных параметров к Обобщенным моделям: {boundCount} из {HeatLossParameters.Length}.");
 
                 _doc.Regenerate();
             }
