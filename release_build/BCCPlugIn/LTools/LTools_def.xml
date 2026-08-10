@@ -1,0 +1,468 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<root>
+	<Aerodynamic>
+		<allInView>true</allInView>
+		<lossMethodRule>
+			<partType>Transition</partType>
+			<guid>5a598293-1504-46cc-a9c0-de55c82848b9</guid>
+			<coefficient>0.3</coefficient>
+		</lossMethodRule>
+		<lossMethodRule>
+			<partType>Elbow</partType>
+			<form>rectangular</form>
+			<guid>5a598293-1504-46cc-a9c0-de55c82848b9</guid>
+			<coefficient>1.5</coefficient>
+		</lossMethodRule>
+		<lossMethodRule>
+			<partType>Elbow</partType>
+			<form>round</form>
+			<guid>5a598293-1504-46cc-a9c0-de55c82848b9</guid>
+			<coefficient>0.5</coefficient>
+		</lossMethodRule>
+		<lossMethodRule>
+			<partType>TapPerpendicular</partType>			
+			<guid>76eff5da-2e71-45f7-b940-cc5716328ba0</guid>			
+		</lossMethodRule>
+		<lossMethodRule>
+			<partType>TapAdjustable</partType>
+			<guid>76eff5da-2e71-45f7-b940-cc5716328ba0</guid>
+		</lossMethodRule>
+		<lossMethodRule>
+			<partType>Tee</partType>
+			<guid>76eff5da-2e71-45f7-b940-cc5716328ba0</guid>
+		</lossMethodRule>
+	</Aerodynamic>
+	<Align>
+		<alignSettings>
+			<surfaceType>true</surfaceType>
+			<minTileAreaM2>0,0003</minTileAreaM2>
+			<minTileEdgeMm>5</minTileEdgeMm>
+			<deviceCategory name="Осветительные_x0020_приборы">-2001120</deviceCategory>
+			<joinHalfTiles>true</joinHalfTiles>
+			<reportType>ExcelBySurfaces</reportType>			
+			<excel>
+				<templateName1>TileCalcTemplate1.xlsx</templateName1>
+				<tempFileMask1>Отчёт по плитке</tempFileMask1>
+				<columnForCopyIndex1>2</columnForCopyIndex1>
+				<templateName2>TileCalcTemplate2.xlsx</templateName2>
+				<tempFileMask2>Отчёт_Плитка_По типам поверхностей</tempFileMask2>
+				<typeParam1>
+					<paramId>
+						<name>ADSK_Марка</name>
+						<guid>2204049c-d557-4dfc-8d70-13f19715e46d</guid>
+					</paramId>
+				</typeParam1>
+				<typeParam2>
+					<paramId>
+						<name>ЛИИС_Наименование_Исполнительная</name>						
+					</paramId>
+				</typeParam2>
+				<columnForCopyIndex2>2</columnForCopyIndex2>
+				<templateName3>TileCalcTemplate3.xlsx</templateName3>
+				<tempFileMask3>Отчёт по подрезке</tempFileMask3>
+				<templateName4>TileCalcTemplate4.xlsx</templateName4>
+				<tempFileMask4>Отчёт_Плитка</tempFileMask4>
+			</excel>
+			<layout>
+				<numberingMode>Individual</numberingMode>				
+				<startIndex>1</startIndex>
+			</layout>
+		</alignSettings>
+		<visualSettings>
+			<createAbsentStyles>true</createAbsentStyles>
+			<allTiles>false</allTiles>			
+			<boundLines>false</boundLines>			
+			<crossPoints>false</crossPoints>
+			<hatchOrigin>false</hatchOrigin>
+			<hatchFullLines>false</hatchFullLines>
+			<boundingBox>false</boundingBox>
+			<problemPoints>false</problemPoints>
+			<debugPoints>false</debugPoints>
+			<debugTileLines>false</debugTileLines>
+			<debugTileBounds>false</debugTileBounds>
+			<debugTiles>false</debugTiles>
+			<longSideTilePairs>false</longSideTilePairs>
+			<shortSideTilePairs>false</shortSideTilePairs>
+			<twoSidesTilePairs>false</twoSidesTilePairs>
+			<cutPlans>false</cutPlans>
+			<cutPlanPointingLines>false</cutPlanPointingLines>
+			<deleteOnExit>true</deleteOnExit>
+			<tilesStyle1>
+				<useFilledRegion>true</useFilledRegion>
+				<useTextNote>true</useTextNote>
+				<filledRegionType>
+					<name>frt_green</name>
+					<autodeskColor R="57" G="198" B="68" />
+					<lineWeight>1</lineWeight>
+				</filledRegionType>
+				<textNoteType>
+					<name>test_TextNoteType_01</name>
+					<textSizeMm>0,6</textSizeMm>
+				</textNoteType>
+			</tilesStyle1>
+			<tilesStyle2>
+				<useFilledRegion>true</useFilledRegion>
+				<useTextNote>true</useTextNote>
+				<filledRegionType>
+					<name>frt_orange</name>
+					<autodeskColor R="255" G="128" B="0" />
+					<lineWeight>1</lineWeight>
+				</filledRegionType>
+				<textNoteType>
+					<name>test_TextNoteType_02</name>
+					<textSizeMm>0,6</textSizeMm>
+				</textNoteType>
+			</tilesStyle2>
+		</visualSettings>		
+	</Align>
+	<DuctHolders>		
+		<holderFamilyDto>
+			<familyDto>
+				<name>LIIS_КрепежВоздуховодов_ТраверсаСоШпильками</name>
+				<folderPath>Families</folderPath>
+				<comment>крепёж прямоугольных воздуховодов</comment>
+			</familyDto>
+			<holderType>TraverseWithPin</holderType>			
+		</holderFamilyDto>
+		<holderFamilyDto>
+			<familyDto>
+				<name>LIIS_КрепежВоздуховодов_ХомутСоШпилькой</name>
+				<folderPath>Families</folderPath>
+				<comment>крепёж круглых воздуховодов</comment>
+			</familyDto>
+			<holderType>BraceWithPin</holderType>
+		</holderFamilyDto>
+		<parameterDiameter>
+			<paramId>
+				<name>Диаметр воздуховода</name>
+			</paramId>
+		</parameterDiameter>
+		<parameterHeight>
+			<paramId>
+				<name>Высота воздуховода</name>
+			</paramId>
+		</parameterHeight>
+		<parameterWidth>
+			<paramId>
+				<name>Ширина воздуховода</name>
+			</paramId>
+		</parameterWidth>
+		<systemNameParam>
+			<paramId>
+				<name>ЛИИС_ИмяСистемы</name>
+			</paramId>
+		</systemNameParam>
+		<parameterDistanceToHost>
+			<paramId>
+				<name>Расстояние до основания</name>
+			</paramId>
+		</parameterDistanceToHost>
+		<stepMm>500</stepMm>
+		<allInView>true</allInView>
+	</DuctHolders>
+	<Leveling>
+		<settings>
+			<autoLevelSelection>true</autoLevelSelection>
+			<deviceCategory name="Осветительные_x0020_приборы">-2001120</deviceCategory>
+		</settings>
+	</Leveling>
+	<LoadingsCalc>
+		<settings>
+			<excel>
+				<templateName>PanelsReport.xlsx</templateName>
+				<tempFileMask>ТРН</tempFileMask>
+				<panelTitleRowIndex>2</panelTitleRowIndex>
+				<loadingRowIndex>3</loadingRowIndex>
+				<totalRowIndex>4</totalRowIndex>
+				<phaseFirstRowIndex>5</phaseFirstRowIndex>
+				<phaseOtherRowIndex>6</phaseOtherRowIndex>
+				<phaseTotalRowIndex>7</phaseTotalRowIndex>
+			</excel>
+			<loadingParameters>
+				<paramDto nick="Name">
+					<paramId>
+						<name>Наименование электроприёмника</name>
+					</paramId>
+					<storageType>String</storageType>
+					<comment>Наименование электроприёмника</comment>					
+				</paramDto>
+				<paramDto nick="ChainNumber">
+					<paramId>
+						<name>Номер цепи</name>
+					</paramId>
+					<storageType>String</storageType>
+					<comment>Номер цепи</comment>					
+				</paramDto>
+				<paramDto nick="Panel">
+					<paramId>
+						<name>Принадлежность щиту</name>
+					</paramId>
+					<storageType>String</storageType>
+					<comment>Принадлежность щиту</comment>					
+				</paramDto>
+				<paramDto nick="Py">
+					<paramId>
+						<name>Py</name>
+					</paramId>
+					<storageType>Double</storageType>
+					<comment>Py</comment>					
+				</paramDto>
+				<paramDto nick="Cosf">
+					<paramId>
+						<name>Cosf</name>
+					</paramId>
+					<storageType>Double</storageType>
+					<comment>Cosf</comment>					
+				</paramDto>
+				<paramDto nick="Kc">
+					<paramId>
+						<name>Kc</name>
+					</paramId>
+					<storageType>Double</storageType>
+					<comment>Kc</comment>					
+				</paramDto>
+				<paramDto nick="Pp">
+					<paramId>
+						<name>Pp</name>
+					</paramId>
+					<storageType>Double</storageType>
+					<comment>Pp</comment>					
+				</paramDto>
+				<paramDto nick="S">
+					<paramId>
+						<name>S</name>
+					</paramId>
+					<storageType>Double</storageType>
+					<comment>S</comment>					
+				</paramDto>
+				<paramDto nick="Ip">
+					<paramId>
+						<name>Ip</name>
+					</paramId>
+					<storageType>Double</storageType>
+					<comment>Ip</comment>					
+				</paramDto>
+				<paramDto nick="ConductorMark">
+					<paramId>
+						<name>Марка проводника</name>
+					</paramId>
+					<storageType>String</storageType>
+					<comment>Марка проводника</comment>					
+				</paramDto>
+				<paramDto nick="ConductorQty">
+					<paramId>
+						<name>Количество жил</name>
+					</paramId>
+					<storageType>Integer</storageType>
+					<comment>Количество жил</comment>					
+				</paramDto>
+				<paramDto nick="ConductorSize">
+					<paramId>
+						<name>Сечение проводника</name>
+					</paramId>
+					<storageType>Double</storageType>
+					<comment>Сечение проводника</comment>					
+				</paramDto>
+				<paramDto nick="ConductorLength">
+					<paramId>
+						<name>Длина проводника</name>
+					</paramId>
+					<storageType>Double</storageType>
+					<comment>Длина проводника</comment>					
+				</paramDto>
+				<paramDto nick="Loss">
+					<paramId>
+						<name>Потери</name>
+					</paramId>
+					<storageType>Double</storageType>
+					<comment>Потери</comment>					
+				</paramDto>
+				<paramDto nick="ProtectionDeviceNum">
+					<paramId>
+						<name>Порядковый номер</name>
+					</paramId>
+					<storageType>String</storageType>
+					<comment>Номер аппарата защиты</comment>					
+				</paramDto>
+				<paramDto nick="LimitValue">
+					<paramId>
+						<name>Уставка аппарата</name>
+					</paramId>
+					<storageType>Double</storageType>
+					<comment>Уставка аппарата</comment>					
+				</paramDto>
+				<paramDto nick="ReleaseCharacteristic">
+					<paramId>
+						<name>Характеристика аппарата</name>
+					</paramId>
+					<storageType>String</storageType>
+					<comment>Характеристика аппарата</comment>					
+				</paramDto>
+				<paramDto nick="Phase">
+					<paramId>
+						<name>Фаза группы</name>
+					</paramId>
+					<storageType>String</storageType>
+					<comment>Фаза группы</comment>					
+				</paramDto>
+			</loadingParameters>
+		</settings>		
+	</LoadingsCalc>
+	<ParamRules>		
+		<settings>
+			<applyOptions>
+				<searchArea>InFullDoc</searchArea>
+				<commonTransaction>true</commonTransaction>
+			</applyOptions>
+			<interOptions>
+				<showFiltersResult>false</showFiltersResult>
+				<devModeEnable>false</devModeEnable>
+				<testFolderPath></testFolderPath>
+				<settingsFileName>settings</settingsFileName>
+				<rulesFileName>rules</rulesFileName>
+				<applyResultFileName>applyResult</applyResultFileName>
+			</interOptions>
+		</settings>
+	</ParamRules>
+	<ParamTranslator>
+		<settings>
+
+		</settings>
+	</ParamTranslator>
+	<PlaceByHatch>
+		<settings>
+			<surfaceType namespace="Autodesk.Revit.DB" typeName="Floor" assemblyName="RevitAPI" />
+			<elevationMm>0</elevationMm>
+			<checkExistence>false</checkExistence>
+			<mode>OnWorkPlane</mode>
+		</settings>		
+	</PlaceByHatch>
+	<PlaceByXYZ>
+		<settings>
+			<format>AutoCAD_menuGEO</format>
+			<placeOnClosestWall>false</placeOnClosestWall>
+			<elevationMm>0</elevationMm>			
+			<paramId>
+				<name>ЛИИС_ID_Марка</name>
+				<guid>7bb39f2b-4ee3-4629-8c3c-6f5a2f15f1e2</guid>
+			</paramId>
+			<shiftOXmm>0</shiftOXmm>
+			<shiftOYmm>0</shiftOYmm>
+			<rotateDegree>0</rotateDegree>
+			<alighToWall>true</alighToWall>
+			<maxDistanceToWallMm>200</maxDistanceToWallMm>
+			<additionalAngleToWallDegree>0</additionalAngleToWallDegree>
+			<joinUp>false</joinUp>
+			<!--<userSeparator>_x007C__x0020_</userSeparator>-->
+			<userSeparator>_x003B__x0020_</userSeparator>
+		</settings>		
+	</PlaceByXYZ>
+	<SchedulePack>
+	</SchedulePack>
+	<Systems>
+		<settings>
+			<systemNameParam>
+				<paramId>
+					<name>ИмяСистемы</name>
+				</paramId>
+			</systemNameParam>
+			<NameSetter>
+				<inFullDocument>false</inFullDocument>
+			</NameSetter>
+			<ViewCreator>
+				<templateViewName></templateViewName>
+				<templateScheduleName></templateScheduleName>
+				<viewNamePrefix>Схема_</viewNamePrefix>
+				<filterNamePrefix></filterNamePrefix>
+				<scheduleNamePrefix>Спецификация </scheduleNamePrefix>
+				<titleBlockFamilyName>ЛИИС_Основная_Надпись</titleBlockFamilyName>
+				<titleBlockTypeName>Форма 3</titleBlockTypeName>
+				<titleBlockParams>
+					<paramDto nick="Format">
+						<paramId>
+							<name>Формат А</name>
+						</paramId>
+						<storageType>Integer</storageType>
+						<isBool>false</isBool>
+						<comment>Формат листа</comment>
+						<value>3</value>
+					</paramDto>
+					<paramDto nick="Orientation">
+						<paramId>
+							<name>Книжная ориентация</name>
+						</paramId>
+						<storageType>Integer</storageType>
+						<isBool>true</isBool>
+						<value>false</value>
+						<comment>Ориентация листа (флажок)</comment>
+					</paramDto>
+					<paramDto nick="UserSheetName">
+						<paramId>
+							<name>Имя листа</name>
+							<bip>-1007400</bip>
+						</paramId>
+						<storageType>String</storageType>
+						<value></value>
+						<comment>Имя листа</comment>
+					</paramDto>
+					<paramDto nick="SheetsQuantity">
+						<paramId>
+							<name>Количество листов</name>
+						</paramId>
+						<storageType>Integer</storageType>
+						<value>true</value>
+						<comment>Количество листов (флажок)</comment>
+					</paramDto>
+				</titleBlockParams>
+				<sheetParams>
+					<paramDto nick="ProjectChapter">
+						<paramId>
+							<guid>7f0c8590-53a2-4ddf-aaed-c70eb9b687bc</guid>
+							<name>ADSK_Штамп Раздел проекта</name>
+						</paramId>
+						<storageType>String</storageType>
+						<value></value>
+						<comment>Раздел проекта</comment>
+					</paramDto>
+					<paramDto nick="ProjectStage">
+						<paramId>
+							<guid>1063f5e8-8487-498e-875f-1f71c61af218</guid>
+							<name>ЛИИС_Этап</name>
+						</paramId>
+						<storageType>String</storageType>
+						<value>Офисные помещения</value>
+						<comment>Этап проекта</comment>
+					</paramDto>
+					<paramDto nick="Phase">
+						<paramId>
+							<guid>5d674478-9ca5-4d15-9ef5-85b0e1ad6c58</guid>
+							<name>ЛИИС_Стадия проекта</name>
+						</paramId>
+						<storageType>String</storageType>
+						<value>ТР</value>
+						<comment>Стадия проекта</comment>
+					</paramDto>
+					<paramDto nick="SheetNumber">
+						<paramId>
+							<guid>997af252-f7c3-4862-a286-baab70c36ba4</guid>
+							<name>ЛИИС_Номер_Листа_Исп</name>
+						</paramId>
+						<storageType>String</storageType>
+						<value>1</value>
+						<comment>Номер листа</comment>
+					</paramDto>
+				</sheetParams>
+				<activateSheet>true</activateSheet>
+			</ViewCreator>
+		</settings>
+	</Systems>	
+	<WallSplitter>
+		<settings>
+			<mainParamName>ЛИИС_Стены_Габариты</mainParamName>
+			<openingsAreaParamName>ADSK_Площадь проемов</openingsAreaParamName>
+			<templateName>WallsSplitReport.xlsx</templateName>
+			<tempFileMask>Ведомость объемов</tempFileMask>
+			<includeGeneralModels>false</includeGeneralModels>
+		</settings>		
+	</WallSplitter>
+</root>

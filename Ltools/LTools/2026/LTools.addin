@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>LTools</Name>
+    <Assembly>LTools\LTools.dll</Assembly>
+    <FullClassName>LTools.App</FullClassName>
+    <ClientId>b80beefa-ae52-4dd9-9f12-456d703abfc5</ClientId>
+    <VendorId>Sergienko Anton</VendorId>
+    <VendorDescription>sergienko_av@mail.ru</VendorDescription>
+  </AddIn>
+</RevitAddIns>

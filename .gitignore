@@ -1,0 +1,24 @@
+# Visual Studio / .NET compilation output
+[Db]in/
+[Oo]bj/
+[Rr]elease/
+[Dd]ebug/
+
+# IDE / User specific settings
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.idea/
+*.sln.DotSettings.user
+
+# Revit backup files
+*.[0-9][0-9][0-9][0-9].rvt
+*.[0-9][0-9][0-9][0-9].rfa
+*.log
+
+# Operating System Files
+Thumbs.db
+ehthumbs.db
+Desktop.ini

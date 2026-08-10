@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>BIMBCC PlugIn App</Name>
+    <Assembly>BCCPlugIn.dll</Assembly>
+    <FullClassName>BCCPlugIn.App</FullClassName>
+    <ClientId>6B94C4E7-8FE2-4A73-A3CD-626F7F0B46A5</ClientId>
+    <VendorId>BCC</VendorId>
+    <VendorDescription>BCC Plugins</VendorDescription>
+  </AddIn>
+</RevitAddIns>

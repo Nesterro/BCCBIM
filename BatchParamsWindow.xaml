@@ -1,0 +1,626 @@
+<Window x:Class="BCCPlugIn.BatchParamsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="BIMBCC | Менеджер параметров" 
+        Height="900" Width="1320"
+        MinHeight="750" MinWidth="1100"
+        WindowStartupLocation="CenterScreen"
+        Background="#FFFFFF"
+        FontFamily="Segoe UI"
+        FontSize="13"
+        Foreground="#1A1A1A"
+        ResizeMode="CanResizeWithGrip"
+        AutomationProperties.Name="Окно Менеджер параметров BIMBCC">
+
+    <Window.Resources>
+        <!-- Focus Visual Style for WCAG 2.4.7 High Contrast Focus -->
+        <Style x:Key="WcagFocusVisual">
+            <Setter Property="Control.Template">
+                <Setter.Value>
+                    <ControlTemplate>
+                        <Rectangle Margin="-2" Stroke="#005FB8" StrokeThickness="2" StrokeDashArray="2 2" RadiusX="4" RadiusY="4"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Primary High Contrast Button Style -->
+        <Style x:Key="PrimaryButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#C91414"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Height" Value="40"/>
+            <Setter Property="MinHeight" Value="36"/>
+            <Setter Property="MinWidth" Value="100"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{StaticResource WcagFocusVisual}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="6">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="14,0"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#A50E0E"/>
+                </Trigger>
+                <Trigger Property="IsFocused" Value="True">
+                    <Setter Property="Background" Value="#A50E0E"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Secondary High Contrast Button Style -->
+        <Style x:Key="SecondaryButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#F2F2F2"/>
+            <Setter Property="Foreground" Value="#1A1A1A"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Height" Value="34"/>
+            <Setter Property="MinHeight" Value="32"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#B0B0B0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Padding" Value="10,0"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+            <Setter Property="FocusVisualStyle" Value="{StaticResource WcagFocusVisual}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="5">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#E5E5E5"/>
+                    <Setter Property="BorderBrush" Value="#005FB8"/>
+                </Trigger>
+                <Trigger Property="IsFocused" Value="True">
+                    <Setter Property="BorderBrush" Value="#005FB8"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Icon Button Style for Step 2 Toolbar -->
+        <Style x:Key="IconButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#F2F2F2"/>
+            <Setter Property="Foreground" Value="#1A1A1A"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Width" Value="34"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#B0B0B0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Margin" Value="2,0"/>
+            <Setter Property="FocusVisualStyle" Value="{StaticResource WcagFocusVisual}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#E5E5E5"/>
+                    <Setter Property="BorderBrush" Value="#005FB8"/>
+                </Trigger>
+                <Trigger Property="IsFocused" Value="True">
+                    <Setter Property="BorderBrush" Value="#005FB8"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Filter Chip Button Style -->
+        <Style x:Key="FilterChipButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#F5F5F5"/>
+            <Setter Property="Foreground" Value="#1A1A1A"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="MinHeight" Value="30"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#B0B0B0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Margin" Value="0,0,6,6"/>
+            <Setter Property="Padding" Value="10,0"/>
+            <Setter Property="FocusVisualStyle" Value="{StaticResource WcagFocusVisual}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#FFEBEE"/>
+                    <Setter Property="BorderBrush" Value="#C91414"/>
+                    <Setter Property="Foreground" Value="#C91414"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- DataGrid Row Styling for WCAG Contrast & Keyboard Visibility -->
+        <Style TargetType="DataGridRow">
+            <Setter Property="Height" Value="38"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#E3F2FD"/>
+                    <Setter Property="Foreground" Value="#0D47A1"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style TargetType="TextBox">
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="Background" Value="#FFFFFF"/>
+            <Setter Property="Foreground" Value="#1A1A1A"/>
+            <Setter Property="BorderBrush" Value="#8A8A8A"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="FocusVisualStyle" Value="{StaticResource WcagFocusVisual}"/>
+        </Style>
+
+        <Style TargetType="ComboBox">
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="Foreground" Value="#1A1A1A"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="FocusVisualStyle" Value="{StaticResource WcagFocusVisual}"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <!-- Header Bar -->
+            <RowDefinition Height="Auto"/>
+            <!-- Shared File Bar -->
+            <RowDefinition Height="Auto"/>
+            <!-- Main Content Splitter -->
+            <RowDefinition Height="*"/>
+            <!-- Progress Bar -->
+            <RowDefinition Height="Auto"/>
+            <!-- Footer Action Buttons -->
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header Bar -->
+        <Border Grid.Row="0" BorderBrush="#E0E0E0" BorderThickness="0,0,0,1" Padding="0,0,0,10" Margin="0,0,0,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="BIMBCC" Foreground="#C91414" FontWeight="Bold" FontSize="22"/>
+                    <TextBlock Text=" | МЕНЕДЖЕР ПАРАМЕТРОВ" Foreground="#1A1A1A" FontWeight="Bold" FontSize="20" Margin="8,0,0,0"/>
+                </StackPanel>
+
+                <!-- Document Mode Badge -->
+                <Border Grid.Column="1" x:Name="ModeBadgeBorder" Background="#FFEBEE" BorderBrush="#B71C1C" BorderThickness="1.5" CornerRadius="5" Padding="12,5">
+                    <TextBlock x:Name="ModeBadgeTextBlock" Text="РЕЖИМ: ПРОЕКТ (.rvt)" Foreground="#B71C1C" FontWeight="Bold" FontSize="13"/>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- Shared Parameter File Bar -->
+        <Border Grid.Row="1" Background="#F9F9F9" BorderBrush="#CCCCCC" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0" Text="Активный ФОП: " FontWeight="Bold" VerticalAlignment="Center" Foreground="#1A1A1A" Margin="0,0,10,0"/>
+                <TextBox Grid.Column="1" x:Name="FopFilePathTextBox" IsReadOnly="True" Margin="0,0,10,0" AutomationProperties.Name="Путь к файлу общих параметров"/>
+                <Button Grid.Column="2" Content="Обзор ФОП (.txt)..." Style="{StaticResource SecondaryButtonStyle}" Margin="0" Click="BrowseFop_Click" AutomationProperties.Name="Выбрать файл общих параметров"/>
+            </Grid>
+        </Border>
+
+        <!-- Main Content Splitter -->
+        <Grid Grid.Row="2" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <!-- Left Column: Step 1 (FOP Picker) + Step 2 (Prepared Parameters Table) -->
+                <ColumnDefinition Width="*"/>
+                <!-- Resizable GridSplitter Spacer -->
+                <ColumnDefinition Width="10"/>
+                <!-- Right Column: Settings & Categories Sidebar -->
+                <ColumnDefinition Width="330" MinWidth="260" MaxWidth="450"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- LEFT COLUMN: 2-STEP PIPELINE WITH HORIZONTAL SPLITTER -->
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <!-- STEP 1: FOP SELECTION BOX & PRE-ADD BUTTON BAR -->
+                    <RowDefinition Height="1*" MinHeight="160"/>
+                    <!-- RESIZABLE HORIZONTAL SPLITTER BETWEEN ITERATIONS -->
+                    <RowDefinition Height="Auto"/>
+                    <!-- STEP 2: PREPARED PARAMETERS FOR BATCH INSERTION -->
+                    <RowDefinition Height="1.4*" MinHeight="160"/>
+                </Grid.RowDefinitions>
+
+                <!-- STEP 1 CONTAINER (BOX + PRE-ADD TOOLBAR) -->
+                <Grid Grid.Row="0" Margin="0,0,0,4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- STEP 1: FOP PARAMETERS PICKER WITH SEPARATE GROUPS LISTBOX -->
+                    <Border Grid.Row="0" BorderBrush="#CCCCCC" BorderThickness="1" CornerRadius="6" Background="#F9F9F9" Padding="10" Margin="0,0,0,6">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <!-- Header -->
+                            <TextBlock Grid.Row="0" Text="1. ИТЕРАЦИЯ: ВЫБОР ПАРАМЕТРОВ ИЗ ГРУПП ФОП" FontSize="12" FontWeight="Bold" Foreground="#B71C1C" Margin="0,0,0,8"/>
+
+                            <Grid Grid.Row="1">
+                                <Grid.ColumnDefinitions>
+                                    <!-- Separate FOP Groups List Box (Width 220px) -->
+                                    <ColumnDefinition Width="220"/>
+                                    <ColumnDefinition Width="10"/>
+                                    <!-- FOP Parameters List & Search -->
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Left Box: FOP Groups ListBox -->
+                                <Border Grid.Column="0" BorderBrush="#CCCCCC" BorderThickness="1" CornerRadius="5" Background="#FFFFFF">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="*"/>
+                                        </Grid.RowDefinitions>
+                                        <Border Grid.Row="0" Background="#EBEBEB" Padding="8,6" BorderBrush="#CCCCCC" BorderThickness="0,0,0,1">
+                                            <TextBlock Text="Группы ФОП:" FontWeight="Bold" Foreground="#1A1A1A" FontSize="12"/>
+                                        </Border>
+                                        <ListBox Grid.Row="1" x:Name="FopGroupsListBox" SelectionChanged="FopGroupsListBox_SelectionChanged" BorderThickness="0" AutomationProperties.Name="Список групп ФОП"/>
+                                    </Grid>
+                                </Border>
+
+                                <!-- Right Box: Search Bar & FOP Parameters DataGrid -->
+                                <Grid Grid.Column="2">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+
+                                    <!-- Search bar -->
+                                    <TextBox Grid.Row="0" x:Name="ParamSearchTextBox" TextChanged="ParamSearchTextBox_TextChanged" Margin="0,0,0,6" ToolTip="Поиск по имени или GUID параметра..." AutomationProperties.Name="Поиск параметров в ФОП"/>
+
+                                    <!-- Source FOP DataGrid with Dedicated FOP Group Column -->
+                                    <Border Grid.Row="1" BorderBrush="#CCCCCC" BorderThickness="1" CornerRadius="5" Background="#FFFFFF">
+                                        <DataGrid x:Name="SourceFopDataGrid" SelectionMode="Extended" AutoGenerateColumns="False" CanUserAddRows="False" GridLinesVisibility="All" VerticalGridLinesBrush="#E0E0E0" HorizontalGridLinesBrush="#E0E0E0" HeadersVisibility="Column" BorderThickness="0" AlternatingRowBackground="#F9F9F9" AutomationProperties.Name="Таблица параметров ФОП">
+                                            <DataGrid.Columns>
+                                                <DataGridTemplateColumn Header="[✓]" Width="42">
+                                                    <DataGridTemplateColumn.CellTemplate>
+                                                        <DataTemplate>
+                                                            <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Click="SourceFopCheckBox_Click" HorizontalAlignment="Center" VerticalAlignment="Center" Width="20" Height="20" AutomationProperties.Name="Выбрать параметр ФОП"/>
+                                                        </DataTemplate>
+                                                    </DataGridTemplateColumn.CellTemplate>
+                                                </DataGridTemplateColumn>
+
+                                                <DataGridTextColumn Header="Имя параметра ФОП" Binding="{Binding Name}" Width="2.4*" FontWeight="Bold"/>
+                                                <DataGridTextColumn Header="Группа ФОП" Binding="{Binding GroupName}" Width="1.8*" IsReadOnly="True"/>
+                                                <DataGridTextColumn Header="Тип данных" Binding="{Binding FriendlyDataType}" Width="1.2*" IsReadOnly="True">
+                                                    <DataGridTextColumn.ElementStyle>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="HorizontalAlignment" Value="Center"/>
+                                                            <Setter Property="VerticalAlignment" Value="Center"/>
+                                                        </Style>
+                                                    </DataGridTextColumn.ElementStyle>
+                                                </DataGridTextColumn>
+                                                <DataGridTextColumn Header="GUID" Binding="{Binding Guid}" Width="2.5*" IsReadOnly="True"/>
+                                            </DataGrid.Columns>
+                                        </DataGrid>
+                                    </Border>
+                                </Grid>
+                            </Grid>
+                        </Grid>
+                    </Border>
+
+                    <!-- PRE-ADD STAGING BUTTON BAR -->
+                    <Grid Grid.Row="1" Margin="0,2,0,2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Orientation="Horizontal">
+                            <Button Content="Выделить все" Style="{StaticResource SecondaryButtonStyle}" Click="SelectAllSourceFop_Click" AutomationProperties.Name="Выделить все параметры в текущей группе"/>
+                            <Button Content="Снять выбор" Style="{StaticResource SecondaryButtonStyle}" Click="DeselectAllSourceFop_Click" AutomationProperties.Name="Снять выделение со всех параметров ФОП"/>
+                        </StackPanel>
+
+                        <Button Grid.Column="2" Content="➔ ДОБАВИТЬ В СПИСОК" Style="{StaticResource PrimaryButtonStyle}" Height="36" Padding="16,0" Click="StageSelectedFopParams_Click" AutomationProperties.Name="Перенести выбранные параметры ФОП в таблицу для записи"/>
+                    </Grid>
+                </Grid>
+
+                <!-- RESIZABLE HORIZONTAL SPLITTER BETWEEN STEP 1 & STEP 2 -->
+                <GridSplitter Grid.Row="1" Height="8" HorizontalAlignment="Stretch" VerticalAlignment="Center" Background="#D0D0D0" ResizeDirection="Rows" Margin="0,4,0,4" Cursor="SizeNS"/>
+
+                <!-- STEP 2: PREPARED PARAMETERS TABLE FOR BATCH EDIT & INSERTION -->
+                <Border Grid.Row="2" BorderBrush="#CCCCCC" BorderThickness="1" CornerRadius="6" Background="#FFFFFF" Padding="10">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <!-- Title & Action Toolbar -->
+                            <RowDefinition Height="Auto"/>
+                            <!-- DataGrid -->
+                            <RowDefinition Height="*"/>
+                            <!-- Count & Actions Bar -->
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Header & Action Toolbar -->
+                        <Grid Grid.Row="0" Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Column="0" Text="2. ИТЕРАЦИЯ: ПОДГОТОВЛЕННЫЕ ПАРАМЕТРЫ К ЗАПИСИ" FontSize="12" FontWeight="Bold" Foreground="#1B5E20" VerticalAlignment="Center" Margin="0,0,16,0"/>
+
+                            <!-- ICON TOOLBAR FOR STEP 2 ACTIONS -->
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button Content="➕" Style="{StaticResource IconButtonStyle}" ToolTip="Добавить пользовательский параметр" Click="AddCustomParam_Click" AutomationProperties.Name="Создать пользовательский параметр"/>
+                                <Button Content="💾" Style="{StaticResource IconButtonStyle}" ToolTip="Сохранить пресет (JSON)" Click="SavePreset_Click" AutomationProperties.Name="Сохранить пресет параметров"/>
+                                <Button Content="📂" Style="{StaticResource IconButtonStyle}" ToolTip="Загрузить пресет (JSON)" Click="LoadPreset_Click" AutomationProperties.Name="Загрузить пресет параметров"/>
+                                <Button Content="📥" Style="{StaticResource IconButtonStyle}" ToolTip="Импортировать из CSV" Click="ImportCsv_Click" AutomationProperties.Name="Импортировать параметры из CSV"/>
+                                <Button Content="📤" Style="{StaticResource IconButtonStyle}" ToolTip="Экспортировать в CSV" Click="ExportCsv_Click" AutomationProperties.Name="Экспортировать параметры в CSV"/>
+                                <Button Content="🗑" Style="{StaticResource IconButtonStyle}" ToolTip="Удалить выбранные из списка" Click="DeleteStagedParams_Click" AutomationProperties.Name="Удалить выбранные из списка"/>
+                                <Button Content="🧹" Style="{StaticResource IconButtonStyle}" ToolTip="Очистить весь список" Click="ClearStagedParams_Click" AutomationProperties.Name="Очистить весь список"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- Prepared Parameters DataGrid Table -->
+                        <Border Grid.Row="1" BorderBrush="#CCCCCC" BorderThickness="1" CornerRadius="5">
+                            <DataGrid x:Name="StagedParamsDataGrid" SelectionMode="Extended" AutoGenerateColumns="False" CanUserAddRows="False" GridLinesVisibility="All" VerticalGridLinesBrush="#E0E0E0" HorizontalGridLinesBrush="#E0E0E0" HeadersVisibility="Column" BorderThickness="0" AlternatingRowBackground="#F9F9F9" SelectionChanged="StagedParamsDataGrid_SelectionChanged" AutomationProperties.Name="Таблица подготовленных параметров к записи">
+                                <DataGrid.Columns>
+                                    <DataGridTemplateColumn Header="[✓]" Width="42">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Click="StagedParamCheckBox_Click" HorizontalAlignment="Center" VerticalAlignment="Center" Width="20" Height="20" AutomationProperties.Name="Выбрать подготовленный параметр"/>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <DataGridTextColumn Header="Имя параметра" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Width="2.2*" FontWeight="Bold"/>
+
+                                    <!-- INSTANCE / TYPE BINDING COMBOBOX -->
+                                    <DataGridTemplateColumn Header="Привязка (Экземпляр/Тип)" Width="1.5*">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <ComboBox SelectedValue="{Binding BindingTypeName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                          SelectedValuePath="Content"
+                                                          SelectionChanged="StagedRowBindingComboBox_SelectionChanged"
+                                                          Height="28" Margin="2,0" VerticalAlignment="Center" AutomationProperties.Name="Выбор привязки Экземпляр или Типоразмер">
+                                                    <ComboBoxItem Content="Экземпляр"/>
+                                                    <ComboBoxItem Content="Типоразмер"/>
+                                                </ComboBox>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <!-- REVIT PROPERTY GROUP COMBOBOX -->
+                                    <DataGridTemplateColumn Header="Группа в свойствах Revit" Width="1.8*">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <ComboBox SelectedValue="{Binding BindingGroupName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                          SelectedValuePath="Content"
+                                                          SelectionChanged="StagedRowGroupComboBox_SelectionChanged"
+                                                          Height="28" Margin="2,0" VerticalAlignment="Center" AutomationProperties.Name="Выбор группы свойств в Revit">
+                                                    <ComboBoxItem Content="Данные"/>
+                                                    <ComboBoxItem Content="Текст"/>
+                                                    <ComboBoxItem Content="Идентификация"/>
+                                                    <ComboBoxItem Content="Размеры"/>
+                                                    <ComboBoxItem Content="Механические"/>
+                                                    <ComboBoxItem Content="Электросети"/>
+                                                    <ComboBoxItem Content="Сантехника"/>
+                                                    <ComboBoxItem Content="Материалы"/>
+                                                    <ComboBoxItem Content="Прочее"/>
+                                                </ComboBox>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <DataGridTextColumn Header="Тип данных" Binding="{Binding FriendlyDataType}" Width="1.1*" IsReadOnly="True">
+                                        <DataGridTextColumn.ElementStyle>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="HorizontalAlignment" Value="Center"/>
+                                                <Setter Property="VerticalAlignment" Value="Center"/>
+                                            </Style>
+                                        </DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Значение / Формула" Binding="{Binding DefaultValue, UpdateSourceTrigger=PropertyChanged}" Width="1.8*"/>
+
+                                    <!-- Delete Button Column -->
+                                    <DataGridTemplateColumn Header="Удалить" Width="68">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <Button Content="🗑" Width="32" Height="30" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip="Удалить параметр из списка" Click="DeleteSingleStagedParamRow_Click" AutomationProperties.Name="Удалить параметр из списка"/>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Border>
+
+                        <!-- Bottom Selection Count Bar -->
+                        <Grid Grid.Row="2" Margin="0,8,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                <Button Content="Выделить все" Style="{StaticResource SecondaryButtonStyle}" Click="SelectAllStaged_Click" AutomationProperties.Name="Выделить все подготовленные параметры"/>
+                                <Button Content="Снять выбор" Style="{StaticResource SecondaryButtonStyle}" Click="DeselectAllStaged_Click" AutomationProperties.Name="Снять выделение со всех подготовленных параметров"/>
+                            </StackPanel>
+
+                            <TextBlock Grid.Column="1" x:Name="StagedParamsCountTextBlock" Text="Подготовлено к записи: 0 параметров" VerticalAlignment="Center" HorizontalAlignment="Right" FontWeight="Bold" Foreground="#1B5E20"/>
+                        </Grid>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <!-- RESIZABLE VERTICAL SPLITTER -->
+            <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="#D0D0D0"/>
+
+            <!-- RIGHT SIDEBAR: BATCH EDIT & CATEGORIES -->
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <!-- Settings Box -->
+                    <RowDefinition Height="Auto"/>
+                    <!-- Categories Box / Family Info Box -->
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- Batch Settings Box -->
+                <Border Grid.Row="0" Background="#F9F9F9" BorderBrush="#CCCCCC" BorderThickness="1" CornerRadius="6" Padding="12" Margin="0,0,0,10">
+                    <StackPanel>
+                        <TextBlock Text="ПАКЕТНОЕ НАЗНАЧЕНИЕ СВОЙСТВ" FontSize="11" FontWeight="Bold" Foreground="#1A1A1A" Margin="0,0,0,8"/>
+
+                        <!-- Instance / Type Selection -->
+                        <TextBlock Text="Привязать выделенные параметры:" FontWeight="Bold" Foreground="#1A1A1A" Margin="0,0,0,4"/>
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="6"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <Button Grid.Column="0" Content="Экземпляр" Style="{StaticResource SecondaryButtonStyle}" Height="34" Margin="0" Click="SetSelectedInstance_Click" AutomationProperties.Name="Назначить тип привязки Экземпляр всем выделенным"/>
+                            <Button Grid.Column="2" Content="Типоразмер" Style="{StaticResource SecondaryButtonStyle}" Height="34" Margin="0" Click="SetSelectedType_Click" AutomationProperties.Name="Назначить тип привязки Типоразмер всем выделенным"/>
+                        </Grid>
+
+                        <!-- Parameter Group Dropdown -->
+                        <StackPanel Margin="0,0,0,8">
+                            <TextBlock Text="Группа в палитре свойств:" FontWeight="Bold" Foreground="#1A1A1A" Margin="0,0,0,4"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="6"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ComboBox Grid.Column="0" x:Name="BatchGroupComboBox" AutomationProperties.Name="Выбор группы параметров для пакетного применения"/>
+                                <Button Grid.Column="2" Content="Применить" Style="{StaticResource SecondaryButtonStyle}" Margin="0" Click="ApplyBatchGroup_Click" AutomationProperties.Name="Применить выбранную группу всем выделенным параметрам"/>
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- Default Value / Formula Batch Input -->
+                        <StackPanel>
+                            <TextBlock Text="Задать значение / формулу:" FontWeight="Bold" Foreground="#1A1A1A" Margin="0,0,0,4"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="6"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox Grid.Column="0" x:Name="BatchDefaultValueTextBox" AutomationProperties.Name="Ввод значения или формулы для пакетного применения"/>
+                                <Button Grid.Column="2" Content="Задать" Style="{StaticResource SecondaryButtonStyle}" Margin="0" Click="ApplyBatchValue_Click" AutomationProperties.Name="Задать значение или формулу всем выделенным параметрам"/>
+                            </Grid>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Project Categories Box (Shown in .rvt mode) -->
+                <Border Grid.Row="1" x:Name="CategoriesBorder" Background="#F9F9F9" BorderBrush="#CCCCCC" BorderThickness="1" CornerRadius="6" Padding="12">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <!-- Title & Presets -->
+                            <RowDefinition Height="Auto"/>
+                            <!-- Search -->
+                            <RowDefinition Height="Auto"/>
+                            <!-- Categories List -->
+                            <RowDefinition Height="*"/>
+                            <!-- Selection Bar -->
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Title & Presets -->
+                        <StackPanel Grid.Row="0" Margin="0,0,0,6">
+                            <TextBlock Text="ВЫБОР КАТЕГОРИЙ ПРОЕКТА" FontSize="11" FontWeight="Bold" Foreground="#1A1A1A" Margin="0,0,0,6"/>
+                            
+                            <!-- Presets Chips -->
+                            <WrapPanel Orientation="Horizontal">
+                                <Button Content="ОВ и ВК" Style="{StaticResource FilterChipButtonStyle}" Click="PresetMep_Click" AutomationProperties.Name="Пресет категорий ОВ и ВК"/>
+                                <Button Content="ЭОМ и СС" Style="{StaticResource FilterChipButtonStyle}" Click="PresetElec_Click" AutomationProperties.Name="Пресет категорий ЭОМ и СС"/>
+                                <Button Content="АР и КР" Style="{StaticResource FilterChipButtonStyle}" Click="PresetArch_Click" AutomationProperties.Name="Пресет категорий АР и КР"/>
+                                <Button Content="Все" Style="{StaticResource FilterChipButtonStyle}" Click="SelectAllCategories_Click" AutomationProperties.Name="Выбрать все категории проекта"/>
+                                <Button Content="Снять" Style="{StaticResource FilterChipButtonStyle}" Click="DeselectAllCategories_Click" AutomationProperties.Name="Снять выделение со всех категорий"/>
+                            </WrapPanel>
+                        </StackPanel>
+
+                        <!-- Search -->
+                        <TextBox Grid.Row="1" x:Name="CategorySearchTextBox" TextChanged="CategorySearchTextBox_TextChanged" Margin="0,0,0,6" ToolTip="Поиск категории..." AutomationProperties.Name="Поиск категорий проекта"/>
+
+                        <!-- Categories ListBox -->
+                        <Border Grid.Row="2" BorderBrush="#CCCCCC" BorderThickness="1" CornerRadius="5" Background="#FFFFFF">
+                            <ListBox x:Name="CategoriesListBox" SelectionMode="Extended" BorderThickness="0" AutomationProperties.Name="Список категорий проекта">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <CheckBox Content="{Binding Name}" 
+                                                  IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
+                                                  Click="CategoryCheckBox_Click" 
+                                                  Margin="4,3"
+                                                  AutomationProperties.Name="{Binding Name}"/>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Border>
+
+                        <!-- Count summary -->
+                        <TextBlock Grid.Row="3" x:Name="SelectedCategoriesCountTextBlock" Text="Категорий выбрано: 0" Foreground="#1A1A1A" FontWeight="Bold" Margin="0,6,0,0"/>
+                    </Grid>
+                </Border>
+
+                <!-- Family Info Box (Shown in .rfa mode) -->
+                <Border Grid.Row="1" x:Name="FamilyInfoBorder" Visibility="Collapsed" Background="#F1F8E9" BorderBrush="#1B5E20" BorderThickness="1.5" CornerRadius="6" Padding="14">
+                    <StackPanel>
+                        <TextBlock Text="ДОБАВЛЕНИЕ В СЕМЕЙСТВО (.rfa)" FontSize="13" FontWeight="Bold" Foreground="#1B5E20" Margin="0,0,0,6"/>
+                        <TextBlock x:Name="FamilyCategoryTextBlock" Text="Категория семейства: -" FontSize="13" FontWeight="Bold" Foreground="#1A1A1A" Margin="0,0,0,8"/>
+                        <TextBlock Text="Подготовленные параметры из таблицы будут созданы в семействе через FamilyManager с привязанными значениями/формулами." TextWrapping="Wrap" Foreground="#1A1A1A" Margin="0,0,0,10"/>
+
+                        <Border Background="#DCEDC8" CornerRadius="4" Padding="8">
+                            <TextBlock Text="Выбор категорий не требуется (семейство имеет фиксированную категорию)." TextWrapping="Wrap" Foreground="#1B5E20" FontWeight="Bold" FontSize="12"/>
+                        </Border>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <!-- Progress Bar -->
+        <StackPanel Grid.Row="3" Margin="0,0,0,8">
+            <TextBlock x:Name="ProgressStatusTextBlock" Text="Готов к работе. Выберите группу ФОП слева, затем параметры и нажмите 'Преддобавить в список (Step 2)'..." Foreground="#1A1A1A" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4"/>
+            <ProgressBar x:Name="BatchProgressBar" Height="10" Minimum="0" Maximum="100" Value="0" Foreground="#C91414"/>
+        </StackPanel>
+
+        <!-- Footer -->
+        <Grid Grid.Row="4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <Button Grid.Column="0" Content="Закрыть" Style="{StaticResource SecondaryButtonStyle}" Width="120" Margin="0" Click="Cancel_Click" AutomationProperties.Name="Закрыть окно"/>
+            <Button Grid.Column="2" x:Name="ExecuteButton" Content="ЗАПИСАТЬ ПОДГОТОВЛЕННЫЕ ПАРАМЕТРЫ В МОДЕЛЬ" Style="{StaticResource PrimaryButtonStyle}" Width="420" Click="Execute_Click" AutomationProperties.Name="Выполнить пакетную запись подготовленных параметров в модель"/>
+        </Grid>
+    </Grid>
+</Window>
