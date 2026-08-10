@@ -762,7 +762,11 @@ namespace BCCPlugIn
 
                 if (existingSchedule != null)
                 {
-                    return existingSchedule;
+                    try
+                    {
+                        _doc.Delete(existingSchedule.Id);
+                    }
+                    catch { }
                 }
 
                 ViewSchedule newSchedule = ViewSchedule.CreateSchedule(_doc, new ElementId(BuiltInCategory.OST_GenericModel));
