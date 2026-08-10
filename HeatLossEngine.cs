@@ -62,6 +62,12 @@ namespace BCCPlugIn
         public string BoundingCategoryName { get; set; }
     }
 
+    public class PlacedCubeInfo
+    {
+        public FamilyInstance Instance { get; set; }
+        public HeatLossBoundaryItem ItemData { get; set; }
+    }
+
     public class HeatLossCalculationResult
     {
         public int SpacesProcessedCount { get; set; }
@@ -123,7 +129,7 @@ namespace BCCPlugIn
             return collector.ToList();
         }
 
-        // MUST RUN OUTSIDE ANY TRANSACTION
+        // PREPARATION: OUTSIDE TRANSACTION
         public List<ExternalDefinition> GetOrCreateHeatLossDefinitions(HeatLossCalculationResult result)
         {
             List<ExternalDefinition> definitions = new List<ExternalDefinition>();
@@ -131,66 +137,49 @@ namespace BCCPlugIn
 
             try
             {
-                DefinitionFile defFile = null;
+                try { origSharedFile = _doc.Application.SharedParametersFilename; } catch { }
 
-                // 1. Try using currently active shared parameter file in Revit Application
-                try
+                string appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BIMBCC");
+                if (!Directory.Exists(appDataDir)) Directory.CreateDirectory(appDataDir);
+                string tempSharedFile = Path.Combine(appDataDir, "BIMBCC_SharedParams.txt");
+
+                StringBuilder sb = new StringBuilder();
+                sb.AppendLine("# This is a Revit shared parameter file.");
+                sb.AppendLine("# Do not edit manually.");
+                sb.AppendLine("*META\tVERSION\tMINVER");
+                sb.AppendLine("META\t2.0\t1");
+                sb.AppendLine("*GROUP\tID\tNAME");
+                sb.AppendLine("GROUP\t1\tBIMBCC_Теплопотери");
+                sb.AppendLine("*PARAM\tGUID\tNAME\tDATATYPE\tDATACATEGORY\tGROUP\tVISIBLE\tDESCRIPTION\tUSERMODIFIABLE\tHIDEWHENNOVALUE");
+
+                var paramsDef = new (string guid, string name, string type, ForgeTypeId forgeType, string desc)[]
                 {
-                    defFile = _doc.Application.OpenSharedParameterFile();
-                }
-                catch { }
+                    ("c1b2c3d4-0001-4000-8000-000000000001", "BIMBCC_Номер помещения", "TEXT", SpecTypeId.String.Text, "Номер помещения"),
+                    ("c1b2c3d4-0002-4000-8000-000000000002", "BIMBCC_Температура наружного воздуха", "NUMBER", SpecTypeId.Number, "Температура наружного воздуха"),
+                    ("c1b2c3d4-0003-4000-8000-000000000003", "BIMBCC_Температура помещения", "NUMBER", SpecTypeId.Number, "Температура помещения"),
+                    ("c1b2c3d4-0004-4000-8000-000000000004", "BIMBCC_Имя помещения", "TEXT", SpecTypeId.String.Text, "Наименование помещения"),
+                    ("c1b2c3d4-0005-4000-8000-000000000005", "BIMBCC_Обозначение", "TEXT", SpecTypeId.String.Text, "Обозначение конструкции"),
+                    ("c1b2c3d4-0006-4000-8000-000000000006", "BIMBCC_Ориентация", "TEXT", SpecTypeId.String.Text, "Ориентация конструкции"),
+                    ("c1b2c3d4-0007-4000-8000-000000000007", "BIMBCC_Длина", "LENGTH", SpecTypeId.Length, "Длина конструкции"),
+                    ("c1b2c3d4-0008-4000-8000-000000000008", "BIMBCC_Высота", "LENGTH", SpecTypeId.Length, "Высота конструкции"),
+                    ("c1b2c3d4-0009-4000-8000-000000000009", "BIMBCC_Площадь", "AREA", SpecTypeId.Area, "Площадь конструкции"),
+                    ("c1b2c3d4-0010-4000-8000-000000000010", "BIMBCC_Коэффициент_n", "NUMBER", SpecTypeId.Number, "Коэффициент n"),
+                    ("c1b2c3d4-0011-4000-8000-000000000011", "BIMBCC_Коэффициент_теплопередачи", "NUMBER", SpecTypeId.Number, "Коэффициент k"),
+                    ("c1b2c3d4-0012-4000-8000-000000000012", "BIMBCC_b1", "NUMBER", SpecTypeId.Number, "b1"),
+                    ("c1b2c3d4-0013-4000-8000-000000000013", "BIMBCC_b2", "NUMBER", SpecTypeId.Number, "b2"),
+                    ("c1b2c3d4-0014-4000-8000-000000000014", "BIMBCC_Коэффициент_надбавки", "NUMBER", SpecTypeId.Number, "Коэффициент надбавки"),
+                    ("c1b2c3d4-0015-4000-8000-000000000015", "BIMBCC_Теплопотери", "NUMBER", SpecTypeId.Number, "Теплопотери Q (Вт)")
+                };
 
-                // 2. If null, create local definition file in User AppData
-                if (defFile == null)
+                foreach (var p in paramsDef)
                 {
-                    try { origSharedFile = _doc.Application.SharedParametersFilename; } catch { }
-
-                    string appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BIMBCC");
-                    if (!Directory.Exists(appDataDir)) Directory.CreateDirectory(appDataDir);
-                    string tempSharedFile = Path.Combine(appDataDir, "BIMBCC_SharedParams.txt");
-
-                    StringBuilder sb = new StringBuilder();
-                    sb.AppendLine("# This is a Revit shared parameter file.");
-                    sb.AppendLine("# Do not edit manually.");
-                    sb.AppendLine("*META\tVERSION\tMINVER");
-                    sb.AppendLine("META\t2.0\t1");
-                    sb.AppendLine("*GROUP\tID\tNAME");
-                    sb.AppendLine("GROUP\t1\tBIMBCC_Теплопотери");
-                    sb.AppendLine("*PARAM\tGUID\tNAME\tDATATYPE\tDATACATEGORY\tGROUP\tVISIBLE\tDESCRIPTION\tUSERMODIFIABLE\tHIDEWHENNOVALUE");
-
-                    var paramsDef = new (string guid, string name, string type, ForgeTypeId forgeType, string desc)[]
-                    {
-                        ("c1b2c3d4-0001-4000-8000-000000000001", "BIMBCC_Номер помещения", "TEXT", SpecTypeId.String.Text, "Номер помещения"),
-                        ("c1b2c3d4-0002-4000-8000-000000000002", "BIMBCC_Температура наружного воздуха", "NUMBER", SpecTypeId.Number, "Температура наружного воздуха"),
-                        ("c1b2c3d4-0003-4000-8000-000000000003", "BIMBCC_Температура помещения", "NUMBER", SpecTypeId.Number, "Температура помещения"),
-                        ("c1b2c3d4-0004-4000-8000-000000000004", "BIMBCC_Имя помещения", "TEXT", SpecTypeId.String.Text, "Наименование помещения"),
-                        ("c1b2c3d4-0005-4000-8000-000000000005", "BIMBCC_Обозначение", "TEXT", SpecTypeId.String.Text, "Обозначение конструкции"),
-                        ("c1b2c3d4-0006-4000-8000-000000000006", "BIMBCC_Ориентация", "TEXT", SpecTypeId.String.Text, "Ориентация конструкции"),
-                        ("c1b2c3d4-0007-4000-8000-000000000007", "BIMBCC_Длина", "LENGTH", SpecTypeId.Length, "Длина конструкции"),
-                        ("c1b2c3d4-0008-4000-8000-000000000008", "BIMBCC_Высота", "LENGTH", SpecTypeId.Length, "Высота конструкции"),
-                        ("c1b2c3d4-0009-4000-8000-000000000009", "BIMBCC_Площадь", "AREA", SpecTypeId.Area, "Площадь конструкции"),
-                        ("c1b2c3d4-0010-4000-8000-000000000010", "BIMBCC_Коэффициент_n", "NUMBER", SpecTypeId.Number, "Коэффициент n"),
-                        ("c1b2c3d4-0011-4000-8000-000000000011", "BIMBCC_Коэффициент_теплопередачи", "NUMBER", SpecTypeId.Number, "Коэффициент k"),
-                        ("c1b2c3d4-0012-4000-8000-000000000012", "BIMBCC_b1", "NUMBER", SpecTypeId.Number, "b1"),
-                        ("c1b2c3d4-0013-4000-8000-000000000013", "BIMBCC_b2", "NUMBER", SpecTypeId.Number, "b2"),
-                        ("c1b2c3d4-0014-4000-8000-000000000014", "BIMBCC_Коэффициент_надбавки", "NUMBER", SpecTypeId.Number, "Коэффициент надбавки"),
-                        ("c1b2c3d4-0015-4000-8000-000000000015", "BIMBCC_Теплопотери", "NUMBER", SpecTypeId.Number, "Теплопотери Q (Вт)")
-                    };
-
-                    foreach (var p in paramsDef)
-                    {
-                        sb.AppendLine($"PARAM\t{p.guid}\t{p.name}\t{p.type}\t\t1\t1\t{p.desc}\t1\t0");
-                    }
-
-                    File.WriteAllText(tempSharedFile, sb.ToString(), Encoding.Unicode);
-
-                    try
-                    {
-                        _doc.Application.SharedParametersFilename = tempSharedFile;
-                        defFile = _doc.Application.OpenSharedParameterFile();
-                    }
-                    catch { }
+                    sb.AppendLine($"PARAM\t{p.guid}\t{p.name}\t{p.type}\t\t1\t1\t{p.desc}\t1\t0");
                 }
+
+                File.WriteAllText(tempSharedFile, sb.ToString(), Encoding.Unicode);
+
+                _doc.Application.SharedParametersFilename = tempSharedFile;
+                DefinitionFile defFile = _doc.Application.OpenSharedParameterFile();
 
                 if (defFile != null)
                 {
@@ -202,8 +191,24 @@ namespace BCCPlugIn
 
                     if (group != null)
                     {
-                        foreach (Definition def in group.Definitions)
+                        foreach (var p in paramsDef)
                         {
+                            Definition def = group.Definitions.get_Item(p.name);
+                            if (def == null)
+                            {
+                                try
+                                {
+                                    ExternalDefinitionCreationOptions opt = new ExternalDefinitionCreationOptions(p.name, p.forgeType)
+                                    {
+                                        Description = p.desc,
+                                        UserModifiable = true,
+                                        Visible = true
+                                    };
+                                    def = group.Definitions.Create(opt);
+                                }
+                                catch { }
+                            }
+
                             if (def is ExternalDefinition extDef)
                             {
                                 definitions.Add(extDef);
@@ -214,7 +219,7 @@ namespace BCCPlugIn
             }
             catch (Exception ex)
             {
-                result?.Logs.Add($"Подготовка параметров: {ex.Message}");
+                result?.Logs.Add($"Инициализация параметров: {ex.Message}");
             }
             finally
             {
@@ -231,12 +236,12 @@ namespace BCCPlugIn
             return definitions;
         }
 
-        // MUST RUN INSIDE TRANSACTION 1
+        // ITERATION 1: BIND PARAMETERS TO PROJECT CATEGORY (TRANSACTION 1)
         public void BindHeatLossProjectParameters(List<ExternalDefinition> definitions, HeatLossCalculationResult result)
         {
             if (definitions == null || definitions.Count == 0)
             {
-                result?.Logs.Add("Этап 1: Добавление проектных параметров выполнено на базе внутренних полей проекта.");
+                result?.Logs.Add("Итерация 1: Использованы имеющиеся параметры проекта.");
                 return;
             }
 
@@ -264,43 +269,31 @@ namespace BCCPlugIn
                     if (ok) boundCount++;
                 }
 
-                result?.Logs.Add($"Этап 1: Успешно привязано проектных параметров: {boundCount} из {definitions.Count}.");
+                result?.Logs.Add($"Итерация 1 (Параметры): Привязано параметров BIMBCC к Обобщенным моделям: {boundCount} из {definitions.Count}.");
                 _doc.Regenerate();
             }
             catch (Exception ex)
             {
-                result?.Logs.Add($"Этап 1: Предупреждение при привязке параметров: {ex.Message}");
+                result?.Logs.Add($"Итерация 1: {ex.Message}");
             }
         }
 
-        // STEP 2: Process spaces, place cubes, write parameters, create schedule
-        public HeatLossCalculationResult ProcessSpaces(
+        // ITERATION 2: PLACE CUBES IN SPACES (TRANSACTION 2)
+        public List<PlacedCubeInfo> PlaceCubeMarkers(
             List<Space> spaces,
             FamilySymbol cubeSymbol,
             RevitLinkInstance selectedLinkInstance,
             string linkedParamName,
-            string targetDesignationParamName,
-            string targetAreaParamName,
             double outdoorTemp,
             bool deleteExistingCubes,
-            bool createSchedule,
-            bool exportCsv,
-            string csvExportPath,
-            HeatLossCalculationResult existingResult = null,
-            Action<string, double> progressCallback = null)
+            HeatLossCalculationResult result,
+            Action<string, double> progressCallback)
         {
-            var result = existingResult ?? new HeatLossCalculationResult();
+            List<PlacedCubeInfo> placedList = new List<PlacedCubeInfo>();
 
-            if (spaces == null || spaces.Count == 0)
+            if (spaces == null || spaces.Count == 0 || cubeSymbol == null)
             {
-                result.Logs.Add("Нет пространств для обработки.");
-                return result;
-            }
-
-            if (cubeSymbol == null)
-            {
-                result.Logs.Add("Не выбран типоразмер кубика.");
-                return result;
+                return placedList;
             }
 
             if (!cubeSymbol.IsActive)
@@ -323,7 +316,7 @@ namespace BCCPlugIn
                 {
                     _doc.Delete(existingCubes);
                     result.DeletedCubesCount = existingCubes.Count;
-                    result.Logs.Add($"Удалено ранее расставленных кубиков: {existingCubes.Count}.");
+                    result.Logs.Add($"Итерация 2: Удалено ранее расставленных кубиков: {existingCubes.Count}.");
                 }
             }
 
@@ -333,15 +326,12 @@ namespace BCCPlugIn
             for (int i = 0; i < totalSpaces; i++)
             {
                 var space = spaces[i];
-                double progressPct = ((double)(i + 1) / totalSpaces) * 70.0;
-                progressCallback?.Invoke($"Анализ помещения/пространства {i + 1} из {totalSpaces}: {space.Name} ({space.Number})...", progressPct);
+                double pct = ((double)(i + 1) / totalSpaces) * 100.0;
+                progressCallback?.Invoke($"Итерация 2: Анализ помещения {i + 1}/{totalSpaces}: {space.Name}...", pct);
 
                 List<HeatLossBoundaryItem> items = ExtractBoundaryItemsForSpace(space, calculator, selectedLinkInstance, linkedParamName, outdoorTemp);
 
-                if (items.Count == 0)
-                {
-                    continue;
-                }
+                if (items.Count == 0) continue;
 
                 result.SpacesProcessedCount++;
                 result.ExtractedItems.AddRange(items);
@@ -381,20 +371,46 @@ namespace BCCPlugIn
                             }
                         }
 
-                        // Write all 15 parameters to the cube instance
-                        WriteAllParametersToCube(instance, item, targetDesignationParamName, targetAreaParamName);
+                        placedList.Add(new PlacedCubeInfo { Instance = instance, ItemData = item });
                     }
 
                     cubeIndex++;
                 }
             }
 
-            result.Logs.Add($"Этап 2: Успешно обработано пространств: {result.SpacesProcessedCount}, расставлено кубиков: {result.CubesPlacedCount}.");
+            result.Logs.Add($"Итерация 2 (Расстановка): Расставлено кубиков по пространствам: {result.CubesPlacedCount}.");
+            _doc.Regenerate();
+            return placedList;
+        }
 
-            // Option 1: Create Revit ViewSchedule with all 15 columns
+        // ITERATION 3: OVERWRITE PARAMETERS ON CUBES & CREATE SCHEDULE (TRANSACTION 3)
+        public void WriteParametersToCubesAndCreateSchedule(
+            List<PlacedCubeInfo> placedCubes,
+            string targetDesignationParamName,
+            string targetAreaParamName,
+            bool createSchedule,
+            bool exportCsv,
+            string csvExportPath,
+            HeatLossCalculationResult result,
+            Action<string, double> progressCallback)
+        {
+            if (placedCubes != null && placedCubes.Count > 0)
+            {
+                int totalCubes = placedCubes.Count;
+                for (int i = 0; i < totalCubes; i++)
+                {
+                    var cubeInfo = placedCubes[i];
+                    double pct = ((double)(i + 1) / totalCubes) * 50.0;
+                    progressCallback?.Invoke($"Итерация 3: Перезапись параметров кубика {i + 1}/{totalCubes}...", pct);
+
+                    WriteAllParametersToCube(cubeInfo.Instance, cubeInfo.ItemData, targetDesignationParamName, targetAreaParamName);
+                }
+                result.Logs.Add($"Итерация 3 (Запись): Перезаписаны параметры в {placedCubes.Count} кубиках.");
+            }
+
             if (createSchedule)
             {
-                progressCallback?.Invoke("Формирование спецификации в Revit...", 80.0);
+                progressCallback?.Invoke("Итерация 3: Формирование спецификации Revit...", 75.0);
                 result.CreatedSchedule = CreateOrUpdateRevitSchedule(targetDesignationParamName, targetAreaParamName, result);
                 if (result.CreatedSchedule != null)
                 {
@@ -402,10 +418,9 @@ namespace BCCPlugIn
                 }
             }
 
-            // Option 2: Export to CSV / Excel report
             if (exportCsv && !string.IsNullOrWhiteSpace(csvExportPath))
             {
-                progressCallback?.Invoke("Экспорт отчёта в CSV/Excel...", 90.0);
+                progressCallback?.Invoke("Итерация 3: Экспорт отчёта CSV/Excel...", 90.0);
                 string exportedPath = ExportToCsvReport(result.ExtractedItems, csvExportPath);
                 if (!string.IsNullOrEmpty(exportedPath))
                 {
@@ -415,7 +430,6 @@ namespace BCCPlugIn
             }
 
             progressCallback?.Invoke("Готово!", 100.0);
-            return result;
         }
 
         private List<HeatLossBoundaryItem> ExtractBoundaryItemsForSpace(

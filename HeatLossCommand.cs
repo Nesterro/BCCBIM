@@ -73,43 +73,60 @@ namespace BCCPlugIn
 
                     HeatLossCalculationResult calculationResult = new HeatLossCalculationResult();
 
-                    // PHASE 0: Load/Create shared parameter definitions OUTSIDE ANY TRANSACTION
-                    // (Revit API forbids calling OpenSharedParameterFile or changing SharedParametersFilename inside an active Transaction)
+                    // PREPARATION: Load/Create shared parameter definitions OUTSIDE ANY TRANSACTION
                     progress.UpdateProgress("Подготовка определений параметров...", 5.0);
                     var definitions = engine.GetOrCreateHeatLossDefinitions(calculationResult);
 
-                    // PHASE 1: Bind project parameters in Transaction 1 (COMMITTED BEFORE CUBE PLACEMENT)
-                    progress.UpdateProgress("Этап 1: Добавление проектных параметров в файл Revit...", 15.0);
-                    using (Transaction trans1 = new Transaction(doc, "BIMBCC Теплопотери - Создание проектных параметров"))
+                    // =========================================================================
+                    // ИТЕРАЦИЯ 1: СОЗДАНИЕ И ПРИВЯЗКА ПАРАМЕТРОВ К ПРОЕКТУ (ТРАНЗАКЦИЯ 1)
+                    // =========================================================================
+                    progress.UpdateProgress("Итерация 1 из 3: Создание и привязка проектных параметров...", 15.0);
+                    using (Transaction trans1 = new Transaction(doc, "BIMBCC Теплопотери - Итерация 1: Параметры"))
                     {
                         trans1.Start();
                         engine.BindHeatLossProjectParameters(definitions, calculationResult);
                         trans1.Commit();
                     }
 
-                    // PHASE 2: Geometry analysis, cube placement, parameter writing, schedule generation
-                    progress.UpdateProgress("Этап 2: Расстановка маркеров и формирование спецификации...", 25.0);
-                    using (Transaction trans2 = new Transaction(doc, "BIMBCC Теплопотери - Расстановка маркеров и спецификация"))
+                    // =========================================================================
+                    // ИТЕРАЦИЯ 2: АНАЛИЗ ГЕОМЕТРИИ И РАССТАНОВКА МАРКЕРОВ (ТРАНЗАКЦИЯ 2)
+                    // =========================================================================
+                    progress.UpdateProgress("Итерация 2 из 3: Расстановка маркеров по пространствам...", 35.0);
+                    List<PlacedCubeInfo> placedCubes = null;
+                    using (Transaction trans2 = new Transaction(doc, "BIMBCC Теплопотери - Итерация 2: Расстановка маркеров"))
                     {
                         trans2.Start();
-
-                        calculationResult = engine.ProcessSpaces(
+                        placedCubes = engine.PlaceCubeMarkers(
                             targetSpaces,
                             window.SelectedCubeSymbol,
                             window.SelectedLinkInstance,
                             window.LinkedParamName,
-                            window.TargetDesignationParamName,
-                            window.TargetAreaParamName,
                             window.OutdoorTemp,
                             window.DeleteExistingCubes,
+                            calculationResult,
+                            (msg, pct) => progress.UpdateProgress(msg, 35.0 + (pct * 0.35))
+                        );
+                        trans2.Commit();
+                    }
+
+                    // =========================================================================
+                    // ИТЕРАЦИЯ 3: ПЕРЕЗАПИСЬ ПАРАМЕТРОВ И ФОРМИРОВАНИЕ СПЕЦИФИКАЦИИ (ТРАНЗАКЦИЯ 3)
+                    // =========================================================================
+                    progress.UpdateProgress("Итерация 3 из 3: Запись параметров в кубики и формирование спецификации...", 70.0);
+                    using (Transaction trans3 = new Transaction(doc, "BIMBCC Теплопотери - Итерация 3: Перезапись параметров и спецификация"))
+                    {
+                        trans3.Start();
+                        engine.WriteParametersToCubesAndCreateSchedule(
+                            placedCubes,
+                            window.TargetDesignationParamName,
+                            window.TargetAreaParamName,
                             window.CreateSchedule,
                             window.ExportCsv,
                             window.CsvExportPath,
                             calculationResult,
-                            (msg, pct) => progress.UpdateProgress(msg, 25.0 + (pct * 0.75))
+                            (msg, pct) => progress.UpdateProgress(msg, 70.0 + (pct * 0.30))
                         );
-
-                        trans2.Commit();
+                        trans3.Commit();
                     }
 
                     progress.Close();
