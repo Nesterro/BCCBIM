@@ -139,11 +139,10 @@ namespace BCCPlugIn
             {
                 try { origSharedFile = _doc.Application.SharedParametersFilename; } catch { }
 
-                string sharedFilePath = @"C:\ProgramData\BIMBCC_SharedParams.txt";
-                string dir = Path.GetDirectoryName(sharedFilePath);
-                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                string tempDir = Path.Combine(Path.GetTempPath(), "BIMBCC");
+                if (!Directory.Exists(tempDir)) Directory.CreateDirectory(tempDir);
+                string sharedFilePath = Path.Combine(tempDir, "BIMBCC_HeatLoss_SharedParams.txt");
 
-                // Write complete valid file pre-populated with all 15 PARAM definitions
                 StringBuilder sb = new StringBuilder();
                 sb.AppendLine("# This is a Revit shared parameter file.");
                 sb.AppendLine("# Do not edit manually.");
@@ -155,21 +154,21 @@ namespace BCCPlugIn
 
                 var paramsDef = new (string guid, string name, string type, string desc)[]
                 {
-                    ("d1b2c3d4-0001-4000-8000-000000000001", "BIMBCC_Номер помещения", "TEXT", "Номер помещения/пространства"),
-                    ("d1b2c3d4-0002-4000-8000-000000000002", "BIMBCC_Температура наружного воздуха", "NUMBER", "Температура наружного воздуха (°C)"),
-                    ("d1b2c3d4-0003-4000-8000-000000000003", "BIMBCC_Температура помещения", "NUMBER", "Температура помещения (°C)"),
-                    ("d1b2c3d4-0004-4000-8000-000000000004", "BIMBCC_Имя помещения", "TEXT", "Наименование помещения/пространства"),
-                    ("d1b2c3d4-0005-4000-8000-000000000005", "BIMBCC_Обозначение", "TEXT", "Обозначение ограждающей конструкции"),
-                    ("d1b2c3d4-0006-4000-8000-000000000006", "BIMBCC_Ориентация", "TEXT", "Ориентация конструкции"),
-                    ("d1b2c3d4-0007-4000-8000-000000000007", "BIMBCC_Длина", "LENGTH", "Длина конструкции (м)"),
-                    ("d1b2c3d4-0008-4000-8000-000000000008", "BIMBCC_Высота", "LENGTH", "Высота конструкции (м)"),
-                    ("d1b2c3d4-0009-4000-8000-000000000009", "BIMBCC_Площадь", "AREA", "Площадь конструкции (м²)"),
-                    ("d1b2c3d4-0010-4000-8000-000000000010", "BIMBCC_Коэффициент_n", "NUMBER", "Коэффициент n"),
-                    ("d1b2c3d4-0011-4000-8000-000000000011", "BIMBCC_Коэффициент_теплопередачи", "NUMBER", "Коэффициент теплопередачи k (Вт/(м²·°C))"),
-                    ("d1b2c3d4-0012-4000-8000-000000000012", "BIMBCC_b1", "NUMBER", "Поправка на ориентацию b1"),
-                    ("d1b2c3d4-0013-4000-8000-000000000013", "BIMBCC_b2", "NUMBER", "Поправка на угол b2"),
-                    ("d1b2c3d4-0014-4000-8000-000000000014", "BIMBCC_Коэффициент_надбавки", "NUMBER", "Коэффициент надбавки (1+b1+b2)"),
-                    ("d1b2c3d4-0015-4000-8000-000000000015", "BIMBCC_Теплопотери", "NUMBER", "Теплопотери Q (Вт)")
+                    ("e1b2c3d4-0001-4000-8000-000000000001", "BIMBCC_Номер помещения", "TEXT", "Номер помещения/пространства"),
+                    ("e1b2c3d4-0002-4000-8000-000000000002", "BIMBCC_Температура наружного воздуха", "NUMBER", "Температура наружного воздуха (°C)"),
+                    ("e1b2c3d4-0003-4000-8000-000000000003", "BIMBCC_Температура помещения", "NUMBER", "Температура помещения (°C)"),
+                    ("e1b2c3d4-0004-4000-8000-000000000004", "BIMBCC_Имя помещения", "TEXT", "Наименование помещения/пространства"),
+                    ("e1b2c3d4-0005-4000-8000-000000000005", "BIMBCC_Обозначение", "TEXT", "Обозначение ограждающей конструкции"),
+                    ("e1b2c3d4-0006-4000-8000-000000000006", "BIMBCC_Ориентация", "TEXT", "Ориентация конструкции"),
+                    ("e1b2c3d4-0007-4000-8000-000000000007", "BIMBCC_Длина", "LENGTH", "Длина конструкции (м)"),
+                    ("e1b2c3d4-0008-4000-8000-000000000008", "BIMBCC_Высота", "LENGTH", "Высота конструкции (м)"),
+                    ("e1b2c3d4-0009-4000-8000-000000000009", "BIMBCC_Площадь", "AREA", "Площадь конструкции (м²)"),
+                    ("e1b2c3d4-0010-4000-8000-000000000010", "BIMBCC_Коэффициент_n", "NUMBER", "Коэффициент n"),
+                    ("e1b2c3d4-0011-4000-8000-000000000011", "BIMBCC_Коэффициент_теплопередачи", "NUMBER", "Коэффициент теплопередачи k (Вт/(м²·°C))"),
+                    ("e1b2c3d4-0012-4000-8000-000000000012", "BIMBCC_b1", "NUMBER", "Поправка на ориентацию b1"),
+                    ("e1b2c3d4-0013-4000-8000-000000000013", "BIMBCC_b2", "NUMBER", "Поправка на угол b2"),
+                    ("e1b2c3d4-0014-4000-8000-000000000014", "BIMBCC_Коэффициент_надбавки", "NUMBER", "Коэффициент надбавки (1+b1+b2)"),
+                    ("e1b2c3d4-0015-4000-8000-000000000015", "BIMBCC_Теплопотери", "NUMBER", "Теплопотери Q (Вт)")
                 };
 
                 foreach (var p in paramsDef)
@@ -219,12 +218,6 @@ namespace BCCPlugIn
         // ITERATION 1: BIND PARAMETERS TO PROJECT CATEGORY (TRANSACTION 1)
         public void BindHeatLossProjectParameters(List<ExternalDefinition> definitions, HeatLossCalculationResult result)
         {
-            if (definitions == null || definitions.Count == 0)
-            {
-                result?.Logs.Add("Итерация 1: Ошибка — определения параметров не найдены.");
-                return;
-            }
-
             try
             {
                 Category genModelCat = _doc.Settings.Categories.get_Item(BuiltInCategory.OST_GenericModel);
@@ -239,17 +232,20 @@ namespace BCCPlugIn
                 InstanceBinding binding = _doc.Application.Create.NewInstanceBinding(catSet);
 
                 int boundCount = 0;
-                foreach (ExternalDefinition extDef in definitions)
+                if (definitions != null && definitions.Count > 0)
                 {
-                    bool ok = _doc.ParameterBindings.Insert(extDef, binding, BuiltInParameterGroup.PG_DATA);
-                    if (!ok)
+                    foreach (ExternalDefinition extDef in definitions)
                     {
-                        ok = _doc.ParameterBindings.ReInsert(extDef, binding, BuiltInParameterGroup.PG_DATA);
+                        bool ok = _doc.ParameterBindings.Insert(extDef, binding, BuiltInParameterGroup.PG_DATA);
+                        if (!ok)
+                        {
+                            ok = _doc.ParameterBindings.ReInsert(extDef, binding, BuiltInParameterGroup.PG_DATA);
+                        }
+                        if (ok) boundCount++;
                     }
-                    if (ok) boundCount++;
                 }
 
-                result?.Logs.Add($"Итерация 1 (Привязка к Обобщенным моделям): Успешно добавлено параметров: {boundCount} из {definitions.Count}.");
+                result?.Logs.Add($"Итерация 1 (Привязка к Обобщенным моделям): Добавлено проектных параметров: {boundCount}.");
                 _doc.Regenerate();
             }
             catch (Exception ex)
