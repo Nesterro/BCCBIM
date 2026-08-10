@@ -143,93 +143,56 @@ namespace BCCPlugIn
                 string dir = Path.GetDirectoryName(sharedFilePath);
                 if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
 
-                if (!File.Exists(sharedFilePath))
+                // Write complete valid file pre-populated with all 15 PARAM definitions
+                StringBuilder sb = new StringBuilder();
+                sb.AppendLine("# This is a Revit shared parameter file.");
+                sb.AppendLine("# Do not edit manually.");
+                sb.AppendLine("*META\tVERSION\tMINVER");
+                sb.AppendLine("META\t2.0\t1");
+                sb.AppendLine("*GROUP\tID\tNAME");
+                sb.AppendLine("GROUP\t1\tBIMBCC_Теплопотери");
+                sb.AppendLine("*PARAM\tGUID\tNAME\tDATATYPE\tDATACATEGORY\tGROUP\tVISIBLE\tDESCRIPTION\tUSERMODIFIABLE\tHIDEWHENNOVALUE");
+
+                var paramsDef = new (string guid, string name, string type, string desc)[]
                 {
-                    StringBuilder sb = new StringBuilder();
-                    sb.AppendLine("# This is a Revit shared parameter file.");
-                    sb.AppendLine("# Do not edit manually.");
-                    sb.AppendLine("*META\tVERSION\tMINVER");
-                    sb.AppendLine("META\t2.0\t1");
-                    sb.AppendLine("*GROUP\tID\tNAME");
-                    sb.AppendLine("GROUP\t1\tBIMBCC_Теплопотери");
-                    sb.AppendLine("*PARAM\tGUID\tNAME\tDATATYPE\tDATACATEGORY\tGROUP\tVISIBLE\tDESCRIPTION\tUSERMODIFIABLE\tHIDEWHENNOVALUE");
-                    File.WriteAllText(sharedFilePath, sb.ToString(), Encoding.Unicode);
+                    ("d1b2c3d4-0001-4000-8000-000000000001", "BIMBCC_Номер помещения", "TEXT", "Номер помещения/пространства"),
+                    ("d1b2c3d4-0002-4000-8000-000000000002", "BIMBCC_Температура наружного воздуха", "NUMBER", "Температура наружного воздуха (°C)"),
+                    ("d1b2c3d4-0003-4000-8000-000000000003", "BIMBCC_Температура помещения", "NUMBER", "Температура помещения (°C)"),
+                    ("d1b2c3d4-0004-4000-8000-000000000004", "BIMBCC_Имя помещения", "TEXT", "Наименование помещения/пространства"),
+                    ("d1b2c3d4-0005-4000-8000-000000000005", "BIMBCC_Обозначение", "TEXT", "Обозначение ограждающей конструкции"),
+                    ("d1b2c3d4-0006-4000-8000-000000000006", "BIMBCC_Ориентация", "TEXT", "Ориентация конструкции"),
+                    ("d1b2c3d4-0007-4000-8000-000000000007", "BIMBCC_Длина", "LENGTH", "Длина конструкции (м)"),
+                    ("d1b2c3d4-0008-4000-8000-000000000008", "BIMBCC_Высота", "LENGTH", "Высота конструкции (м)"),
+                    ("d1b2c3d4-0009-4000-8000-000000000009", "BIMBCC_Площадь", "AREA", "Площадь конструкции (м²)"),
+                    ("d1b2c3d4-0010-4000-8000-000000000010", "BIMBCC_Коэффициент_n", "NUMBER", "Коэффициент n"),
+                    ("d1b2c3d4-0011-4000-8000-000000000011", "BIMBCC_Коэффициент_теплопередачи", "NUMBER", "Коэффициент теплопередачи k (Вт/(м²·°C))"),
+                    ("d1b2c3d4-0012-4000-8000-000000000012", "BIMBCC_b1", "NUMBER", "Поправка на ориентацию b1"),
+                    ("d1b2c3d4-0013-4000-8000-000000000013", "BIMBCC_b2", "NUMBER", "Поправка на угол b2"),
+                    ("d1b2c3d4-0014-4000-8000-000000000014", "BIMBCC_Коэффициент_надбавки", "NUMBER", "Коэффициент надбавки (1+b1+b2)"),
+                    ("d1b2c3d4-0015-4000-8000-000000000015", "BIMBCC_Теплопотери", "NUMBER", "Теплопотери Q (Вт)")
+                };
+
+                foreach (var p in paramsDef)
+                {
+                    sb.AppendLine($"PARAM\t{p.guid}\t{p.name}\t{p.type}\t\t1\t1\t{p.desc}\t1\t0");
                 }
+
+                File.WriteAllText(sharedFilePath, sb.ToString(), Encoding.Unicode);
 
                 _doc.Application.SharedParametersFilename = sharedFilePath;
-                DefinitionFile defFile = null;
-                try
+                DefinitionFile defFile = _doc.Application.OpenSharedParameterFile();
+
+                if (defFile != null)
                 {
-                    defFile = _doc.Application.OpenSharedParameterFile();
-                }
-                catch { }
-
-                if (defFile == null)
-                {
-                    File.WriteAllText(sharedFilePath,
-                        "# This is a Revit shared parameter file.\r\n" +
-                        "# Do not edit manually.\r\n" +
-                        "*META\tVERSION\tMINVER\r\n" +
-                        "META\t2.0\t1\r\n" +
-                        "*GROUP\tID\tNAME\r\n" +
-                        "GROUP\t1\tBIMBCC_Теплопотери\r\n" +
-                        "*PARAM\tGUID\tNAME\tDATATYPE\tDATACATEGORY\tGROUP\tVISIBLE\tDESCRIPTION\tUSERMODIFIABLE\tHIDEWHENNOVALUE\r\n",
-                        new UTF8Encoding(true));
-
-                    _doc.Application.SharedParametersFilename = sharedFilePath;
-                    try { defFile = _doc.Application.OpenSharedParameterFile(); } catch { }
-                }
-
-                if (defFile == null)
-                {
-                    result?.Logs.Add("Подготовка параметров: Не удалось открыть файл ФОП.");
-                    return definitions;
-                }
-
-                DefinitionGroup group = defFile.Groups.get_Item("BIMBCC_Теплопотери") ?? defFile.Groups.Create("BIMBCC_Теплопотери");
-
-                if (group != null)
-                {
-                    var paramsDef = new (string name, ForgeTypeId forgeType, string desc)[]
+                    DefinitionGroup group = defFile.Groups.get_Item("BIMBCC_Теплопотери");
+                    if (group != null)
                     {
-                        ("BIMBCC_Номер помещения", SpecTypeId.String.Text, "Номер помещения/пространства"),
-                        ("BIMBCC_Температура наружного воздуха", SpecTypeId.Number, "Температура наружного воздуха (°C)"),
-                        ("BIMBCC_Температура помещения", SpecTypeId.Number, "Температура помещения (°C)"),
-                        ("BIMBCC_Имя помещения", SpecTypeId.String.Text, "Наименование помещения/пространства"),
-                        ("BIMBCC_Обозначение", SpecTypeId.String.Text, "Обозначение ограждающей конструкции"),
-                        ("BIMBCC_Ориентация", SpecTypeId.String.Text, "Ориентация конструкции"),
-                        ("BIMBCC_Длина", SpecTypeId.Length, "Длина конструкции (м)"),
-                        ("BIMBCC_Высота", SpecTypeId.Length, "Высота конструкции (м)"),
-                        ("BIMBCC_Площадь", SpecTypeId.Area, "Площадь конструкции (м²)"),
-                        ("BIMBCC_Коэффициент_n", SpecTypeId.Number, "Коэффициент n"),
-                        ("BIMBCC_Коэффициент_теплопередачи", SpecTypeId.Number, "Коэффициент теплопередачи k (Вт/(м²·°C))"),
-                        ("BIMBCC_b1", SpecTypeId.Number, "Поправка на ориентацию b1"),
-                        ("BIMBCC_b2", SpecTypeId.Number, "Поправка на угол b2"),
-                        ("BIMBCC_Коэффициент_надбавки", SpecTypeId.Number, "Коэффициент надбавки (1+b1+b2)"),
-                        ("BIMBCC_Теплопотери", SpecTypeId.Number, "Теплопотери Q (Вт)")
-                    };
-
-                    foreach (var p in paramsDef)
-                    {
-                        Definition def = group.Definitions.get_Item(p.name);
-                        if (def == null)
+                        foreach (Definition def in group.Definitions)
                         {
-                            try
+                            if (def is ExternalDefinition extDef)
                             {
-                                ExternalDefinitionCreationOptions opt = new ExternalDefinitionCreationOptions(p.name, p.forgeType)
-                                {
-                                    Description = p.desc,
-                                    UserModifiable = true,
-                                    Visible = true
-                                };
-                                def = group.Definitions.Create(opt);
+                                definitions.Add(extDef);
                             }
-                            catch { }
-                        }
-
-                        if (def is ExternalDefinition extDef)
-                        {
-                            definitions.Add(extDef);
                         }
                     }
                 }
@@ -258,7 +221,7 @@ namespace BCCPlugIn
         {
             if (definitions == null || definitions.Count == 0)
             {
-                result?.Logs.Add("Итерация 1: Использованы имеющиеся параметры проекта.");
+                result?.Logs.Add("Итерация 1: Ошибка — определения параметров не найдены.");
                 return;
             }
 
@@ -286,7 +249,7 @@ namespace BCCPlugIn
                     if (ok) boundCount++;
                 }
 
-                result?.Logs.Add($"Итерация 1 (Параметры): Привязано параметров BIMBCC к Обобщенным моделям: {boundCount} из {definitions.Count}.");
+                result?.Logs.Add($"Итерация 1 (Привязка к Обобщенным моделям): Успешно добавлено параметров: {boundCount} из {definitions.Count}.");
                 _doc.Regenerate();
             }
             catch (Exception ex)
