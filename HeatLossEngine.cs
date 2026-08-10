@@ -475,7 +475,6 @@ namespace BCCPlugIn
             double outdoorTemp)
         {
             var boundaryItems = new List<HeatLossBoundaryItem>();
-            var designationMap = new Dictionary<string, HeatLossBoundaryItem>();
 
             double spaceHeightFt = space.UnboundedHeight > 0 ? space.UnboundedHeight : 9.84252;
             double spaceHeightMeters = UnitUtils.ConvertFromInternalUnits(spaceHeightFt, UnitTypeId.Meters);
@@ -530,6 +529,11 @@ namespace BCCPlugIn
                         if (boundingElement == null) continue;
 
                         string wallDesignation = GetElementDesignation(boundingElement, linkedParamName);
+                        if (string.IsNullOrWhiteSpace(wallDesignation))
+                        {
+                            wallDesignation = boundingElement.Name ?? boundingElement.Category?.Name ?? "Ограждающая конструкция";
+                        }
+
                         double insertsTotalAreaSqM = 0.0;
 
                         if (boundingElement is Wall wall && linkDoc != null)
@@ -541,29 +545,66 @@ namespace BCCPlugIn
                                 if (insertElem == null) continue;
 
                                 string insertDesignation = GetElementDesignation(insertElem, linkedParamName);
-                                if (string.IsNullOrWhiteSpace(insertDesignation)) continue;
+                                if (string.IsNullOrWhiteSpace(insertDesignation))
+                                {
+                                    insertDesignation = insertElem.Name ?? insertElem.Category?.Name ?? "Окно/Дверь";
+                                }
 
                                 (double insertWidthM, double insertHeightM, double insertAreaSqM) = GetInsertDimensions(insertElem);
                                 if (insertAreaSqM > 0.001)
                                 {
                                     insertsTotalAreaSqM += insertAreaSqM;
                                     double kVal = GetThermalTransmittanceK(insertElem);
-                                    AddOrAggregateItem(designationMap, space, insertDesignation, insertWidthM, insertHeightM, insertAreaSqM, kVal, outdoorTemp, insertElem);
+
+                                    boundaryItems.Add(new HeatLossBoundaryItem
+                                    {
+                                        SpaceId = space.Id,
+                                        SpaceNumber = space.Number ?? "",
+                                        SpaceName = space.Name ?? "",
+                                        OutdoorTemp = outdoorTemp,
+                                        IndoorTemp = 20.0,
+                                        Designation = insertDesignation,
+                                        Orientation = "СЗ",
+                                        LengthMeters = insertWidthM,
+                                        HeightMeters = insertHeightM,
+                                        AreaSqMeters = insertAreaSqM,
+                                        CoeffN = 1.0,
+                                        CoeffK = kVal,
+                                        B1 = 0.1,
+                                        B2 = 0.0,
+                                        BoundingElementId = insertElem.Id,
+                                        BoundingCategoryName = insertElem.Category?.Name ?? "Элемент"
+                                    });
                                 }
                             }
                         }
 
-                        if (!string.IsNullOrWhiteSpace(wallDesignation))
+                        double netAreaSqM = Math.Max(0.0, areaSqM - insertsTotalAreaSqM);
+                        if (netAreaSqM > 0.001)
                         {
-                            double netAreaSqM = Math.Max(0.0, areaSqM - insertsTotalAreaSqM);
-                            if (netAreaSqM > 0.001)
-                            {
-                                double heightM = spaceHeightMeters;
-                                double lengthM = heightM > 0 ? netAreaSqM / heightM : Math.Sqrt(netAreaSqM);
-                                double kVal = GetThermalTransmittanceK(boundingElement);
+                            double heightM = spaceHeightMeters;
+                            double lengthM = heightM > 0 ? netAreaSqM / heightM : Math.Sqrt(netAreaSqM);
+                            double kVal = GetThermalTransmittanceK(boundingElement);
 
-                                AddOrAggregateItem(designationMap, space, wallDesignation, lengthM, heightM, netAreaSqM, kVal, outdoorTemp, boundingElement);
-                            }
+                            boundaryItems.Add(new HeatLossBoundaryItem
+                            {
+                                SpaceId = space.Id,
+                                SpaceNumber = space.Number ?? "",
+                                SpaceName = space.Name ?? "",
+                                OutdoorTemp = outdoorTemp,
+                                IndoorTemp = 20.0,
+                                Designation = wallDesignation,
+                                Orientation = "СЗ",
+                                LengthMeters = lengthM,
+                                HeightMeters = heightM,
+                                AreaSqMeters = netAreaSqM,
+                                CoeffN = 1.0,
+                                CoeffK = kVal,
+                                B1 = 0.1,
+                                B2 = 0.0,
+                                BoundingElementId = boundingElement.Id,
+                                BoundingCategoryName = boundingElement.Category?.Name ?? "Элемент"
+                            });
                         }
                     }
                 }
@@ -573,51 +614,7 @@ namespace BCCPlugIn
                 // Ignore individual space geometry errors
             }
 
-            return designationMap.Values.ToList();
-        }
-
-        private void AddOrAggregateItem(
-            Dictionary<string, HeatLossBoundaryItem> map,
-            Space space,
-            string designation,
-            double lengthM,
-            double heightM,
-            double areaSqM,
-            double kVal,
-            double outdoorTemp,
-            Element element)
-        {
-            designation = designation.Trim();
-            if (map.ContainsKey(designation))
-            {
-                map[designation].AreaSqMeters += areaSqM;
-                if (map[designation].HeightMeters > 0)
-                {
-                    map[designation].LengthMeters = map[designation].AreaSqMeters / map[designation].HeightMeters;
-                }
-            }
-            else
-            {
-                map[designation] = new HeatLossBoundaryItem
-                {
-                    SpaceId = space.Id,
-                    SpaceNumber = space.Number ?? "",
-                    SpaceName = space.Name ?? "",
-                    OutdoorTemp = outdoorTemp,
-                    IndoorTemp = 20.0,
-                    Designation = designation,
-                    Orientation = "СЗ",
-                    LengthMeters = lengthM,
-                    HeightMeters = heightM,
-                    AreaSqMeters = areaSqM,
-                    CoeffN = 1.0,
-                    CoeffK = kVal,
-                    B1 = 0.1,
-                    B2 = 0.0,
-                    BoundingElementId = element.Id,
-                    BoundingCategoryName = element.Category?.Name ?? "Элемент"
-                };
-            }
+            return boundaryItems;
         }
 
         private (double widthM, double heightM, double areaSqM) GetInsertDimensions(Element insertElem)
