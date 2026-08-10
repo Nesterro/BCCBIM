@@ -7,6 +7,7 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Mechanical;
 using Autodesk.Revit.UI;
+using Autodesk.Revit.UI.Selection;
 
 namespace BCCPlugIn
 {
@@ -16,35 +17,42 @@ namespace BCCPlugIn
     {
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
-            UIApplication uiapp = commandData.Application;
-            UIDocument uidoc = uiapp.ActiveUIDocument;
-            if (uidoc == null)
-            {
-                message = "Нет активного документа Revit.";
-                return Result.Failed;
-            }
-
-            Document doc = uidoc.Document;
-
             try
             {
-                // Collect space element IDs from current UI selection
-                ICollection<ElementId> currentSelection = uidoc.Selection.GetElementIds();
-                List<ElementId> selectedSpaceIds = currentSelection
-                    .Select(id => doc.GetElement(id))
-                    .Where(e => e is Space)
-                    .Select(e => e.Id)
-                    .ToList();
+                UIApplication uiapp = commandData.Application;
+                UIDocument uidoc = uiapp.ActiveUIDocument;
+                Document doc = uidoc.Document;
+
+                HeatLossEngine engine = new HeatLossEngine(doc);
+
+                // Collect spaces, links, and cube symbols
+                var linkInstances = engine.GetRevitLinkInstances();
+                var cubeSymbols = engine.GetAvailableCubeSymbols();
+
+                List<ElementId> selectedSpaceIds = new List<ElementId>();
+                try
+                {
+                    Selection selection = uidoc.Selection;
+                    ICollection<ElementId> selectedIds = selection.GetElementIds();
+                    foreach (ElementId id in selectedIds)
+                    {
+                        Element elem = doc.GetElement(id);
+                        if (elem is Space)
+                        {
+                            selectedSpaceIds.Add(id);
+                        }
+                    }
+                }
+                catch { }
 
                 HeatLossWindow window = new HeatLossWindow(doc, selectedSpaceIds);
+
                 WindowInteropHelper helper = new WindowInteropHelper(window);
                 helper.Owner = uiapp.MainWindowHandle;
 
                 if (window.ShowDialog() == true)
                 {
-                    HeatLossEngine engine = new HeatLossEngine(doc);
-
-                    var targetSpaces = engine.GetTargetSpaces(
+                    List<Space> targetSpaces = engine.GetTargetSpaces(
                         window.ScopeMode,
                         selectedSpaceIds,
                         window.SelectedLevelId);
@@ -63,11 +71,22 @@ namespace BCCPlugIn
                     progress.SetHeaderTitle(" | ВЫПОЛНЕНИЕ РАСЧЁТА ТЕПЛОПОТЕРЬ");
                     progress.Show();
 
-                    HeatLossCalculationResult calculationResult = null;
+                    HeatLossCalculationResult calculationResult = new HeatLossCalculationResult();
 
-                    using (Transaction trans = new Transaction(doc, "BIMBCC Теплопотери - Расстановка маркеров"))
+                    // PHASE 1: Create and bind project parameters in a dedicated transaction (COMMITTED BEFORE CUBE PLACEMENT)
+                    progress.UpdateProgress("Этап 1: Добавление проектных параметров в файл Revit...", 10.0);
+                    using (Transaction trans1 = new Transaction(doc, "BIMBCC Теплопотери - Создание проектных параметров"))
                     {
-                        trans.Start();
+                        trans1.Start();
+                        engine.EnsureHeatLossProjectParametersExist(calculationResult);
+                        trans1.Commit();
+                    }
+
+                    // PHASE 2: Geometry analysis, cube placement, parameter writing, schedule generation
+                    progress.UpdateProgress("Этап 2: Расстановка маркеров и формирование спецификации...", 20.0);
+                    using (Transaction trans2 = new Transaction(doc, "BIMBCC Теплопотери - Расстановка маркеров и спецификация"))
+                    {
+                        trans2.Start();
 
                         calculationResult = engine.ProcessSpaces(
                             targetSpaces,
@@ -81,10 +100,11 @@ namespace BCCPlugIn
                             window.CreateSchedule,
                             window.ExportCsv,
                             window.CsvExportPath,
-                            (msg, pct) => progress.UpdateProgress(msg, pct)
+                            calculationResult,
+                            (msg, pct) => progress.UpdateProgress(msg, 20.0 + (pct * 0.8))
                         );
 
-                        trans.Commit();
+                        trans2.Commit();
                     }
 
                     progress.Close();

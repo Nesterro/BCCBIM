@@ -142,6 +142,91 @@ namespace BCCPlugIn
             return collector.ToList();
         }
 
+        // STEP 1: Must run in its own Transaction before ProcessSpaces
+        public void EnsureHeatLossProjectParametersExist(HeatLossCalculationResult result)
+        {
+            try
+            {
+                Category genModelCat = _doc.Settings.Categories.get_Item(BuiltInCategory.OST_GenericModel);
+                if (genModelCat == null || !genModelCat.AllowsBoundParameters)
+                {
+                    result?.Logs.Add("Категория Обобщенные модели недоступна для привязки параметров.");
+                    return;
+                }
+
+                CategorySet catSet = _doc.Application.Create.NewCategorySet();
+                catSet.Insert(genModelCat);
+                InstanceBinding binding = _doc.Application.Create.NewInstanceBinding(catSet);
+
+                string origSharedFile = _doc.Application.SharedParametersFilename;
+                string tempSharedFile = Path.Combine(Path.GetTempPath(), "BIMBCC_HeatLoss_SharedParams.txt");
+
+                if (!File.Exists(tempSharedFile))
+                {
+                    File.WriteAllText(tempSharedFile,
+                        "# This is a Revit shared parameter file.\r\n" +
+                        "# Do not edit manually.\r\n" +
+                        "*META\tVERSION\tMINVER\r\n" +
+                        "META\t2.0\t1\r\n" +
+                        "*GROUP\tID\tNAME\r\n" +
+                        "GROUP\t1\tBIMBCC_Теплопотери\r\n" +
+                        "*PARAM\tGUID\tNAME\tDATATYPE\tDATACATEGORY\tGROUP\tVISIBLE\tDESCRIPTION\tUSERMODIFIABLE\tHIDEWHENNOVALUE\r\n",
+                        Encoding.Unicode);
+                }
+
+                _doc.Application.SharedParametersFilename = tempSharedFile;
+                DefinitionFile defFile = _doc.Application.OpenSharedParameterFile();
+
+                if (defFile == null)
+                {
+                    result?.Logs.Add("Не удалось открыть созданный ФОП файл.");
+                    return;
+                }
+
+                DefinitionGroup group = defFile.Groups.get_Item("BIMBCC_Теплопотери") ?? defFile.Groups.Create("BIMBCC_Теплопотери");
+
+                int boundCount = 0;
+                foreach (var (pName, specType, desc) in HeatLossParameters)
+                {
+                    Definition def = group.Definitions.get_Item(pName);
+                    if (def == null)
+                    {
+                        ExternalDefinitionCreationOptions opt = new ExternalDefinitionCreationOptions(pName, specType)
+                        {
+                            Description = desc,
+                            UserModifiable = true,
+                            Visible = true
+                        };
+                        def = group.Definitions.Create(opt);
+                    }
+
+                    if (def is ExternalDefinition extDef)
+                    {
+                        bool ok = _doc.ParameterBindings.Insert(extDef, binding, BuiltInParameterGroup.PG_DATA);
+                        if (!ok)
+                        {
+                            ok = _doc.ParameterBindings.ReInsert(extDef, binding, BuiltInParameterGroup.PG_DATA);
+                        }
+                        if (ok) boundCount++;
+                    }
+                }
+
+                result?.Logs.Add($"Этап 1: Добавлено проектных параметров к Обобщенным моделям: {boundCount} из {HeatLossParameters.Length}.");
+
+                if (!string.IsNullOrEmpty(origSharedFile) && File.Exists(origSharedFile))
+                {
+                    _doc.Application.SharedParametersFilename = origSharedFile;
+                }
+
+                _doc.Regenerate();
+            }
+            catch (Exception ex)
+            {
+                result?.Logs.Add($"Этап 1: Предупреждение при привязке параметров: {ex.Message}");
+            }
+        }
+
+        // STEP 2: Process spaces, place cubes, write parameters, create schedule
         public HeatLossCalculationResult ProcessSpaces(
             List<Space> spaces,
             FamilySymbol cubeSymbol,
@@ -154,9 +239,10 @@ namespace BCCPlugIn
             bool createSchedule,
             bool exportCsv,
             string csvExportPath,
+            HeatLossCalculationResult existingResult = null,
             Action<string, double> progressCallback = null)
         {
-            var result = new HeatLossCalculationResult();
+            var result = existingResult ?? new HeatLossCalculationResult();
 
             if (spaces == null || spaces.Count == 0)
             {
@@ -175,9 +261,6 @@ namespace BCCPlugIn
                 cubeSymbol.Activate();
                 _doc.Regenerate();
             }
-
-            // Ensure all 15 BIMBCC project parameters are bound to Generic Models in document
-            EnsureHeatLossProjectParametersExist(result);
 
             if (deleteExistingCubes)
             {
@@ -259,7 +342,7 @@ namespace BCCPlugIn
                 }
             }
 
-            result.Logs.Add($"Успешно обработано пространств: {result.SpacesProcessedCount}, расставлено кубиков: {result.CubesPlacedCount}.");
+            result.Logs.Add($"Этап 2: Успешно обработано пространств: {result.SpacesProcessedCount}, расставлено кубиков: {result.CubesPlacedCount}.");
 
             // Option 1: Create Revit ViewSchedule with all 15 columns
             if (createSchedule)
@@ -286,89 +369,6 @@ namespace BCCPlugIn
 
             progressCallback?.Invoke("Готово!", 100.0);
             return result;
-        }
-
-        private void EnsureHeatLossProjectParametersExist(HeatLossCalculationResult result)
-        {
-            try
-            {
-                Category genModelCat = _doc.Settings.Categories.get_Item(BuiltInCategory.OST_GenericModel);
-                if (genModelCat == null || !genModelCat.AllowsBoundParameters)
-                {
-                    result?.Logs.Add("Категория Обобщенные модели недоступна для привязки параметров.");
-                    return;
-                }
-
-                CategorySet catSet = _doc.Application.Create.NewCategorySet();
-                catSet.Insert(genModelCat);
-                InstanceBinding binding = _doc.Application.Create.NewInstanceBinding(catSet);
-
-                string origSharedFile = _doc.Application.SharedParametersFilename;
-                string tempSharedFile = Path.Combine(Path.GetTempPath(), "BIMBCC_HeatLoss_SharedParams.txt");
-
-                if (!File.Exists(tempSharedFile))
-                {
-                    File.WriteAllText(tempSharedFile,
-                        "# This is a Revit shared parameter file.\r\n" +
-                        "# Do not edit manually.\r\n" +
-                        "*META\tVERSION\tMINVER\r\n" +
-                        "META\t2.0\t1\r\n" +
-                        "*GROUP\tID\tNAME\r\n" +
-                        "GROUP\t1\tBIMBCC_Теплопотери\r\n" +
-                        "*PARAM\tGUID\tNAME\tDATATYPE\tDATACATEGORY\tGROUP\tVISIBLE\tDESCRIPTION\tUSERMODIFIABLE\tHIDEWHENNOVALUE\r\n",
-                        Encoding.Unicode);
-                }
-
-                _doc.Application.SharedParametersFilename = tempSharedFile;
-                DefinitionFile defFile = _doc.Application.OpenSharedParameterFile();
-
-                if (defFile == null)
-                {
-                    result?.Logs.Add("Не удалось открыть созданный ФОП файл.");
-                    return;
-                }
-
-                DefinitionGroup group = defFile.Groups.get_Item("BIMBCC_Теплопотери") ?? defFile.Groups.Create("BIMBCC_Теплопотери");
-
-                int boundCount = 0;
-                foreach (var (pName, specType, desc) in HeatLossParameters)
-                {
-                    Definition def = group.Definitions.get_Item(pName);
-                    if (def == null)
-                    {
-                        ExternalDefinitionCreationOptions opt = new ExternalDefinitionCreationOptions(pName, specType)
-                        {
-                            Description = desc,
-                            UserModifiable = true,
-                            Visible = true
-                        };
-                        def = group.Definitions.Create(opt);
-                    }
-
-                    if (def is ExternalDefinition extDef)
-                    {
-                        bool ok = _doc.ParameterBindings.Insert(extDef, binding, BuiltInParameterGroup.PG_DATA);
-                        if (!ok)
-                        {
-                            ok = _doc.ParameterBindings.ReInsert(extDef, binding, BuiltInParameterGroup.PG_DATA);
-                        }
-                        if (ok) boundCount++;
-                    }
-                }
-
-                result?.Logs.Add($"Привязано параметров BIMBCC к Обобщенным моделям: {boundCount} из {HeatLossParameters.Length}.");
-
-                if (!string.IsNullOrEmpty(origSharedFile) && File.Exists(origSharedFile))
-                {
-                    _doc.Application.SharedParametersFilename = origSharedFile;
-                }
-
-                _doc.Regenerate();
-            }
-            catch (Exception ex)
-            {
-                result?.Logs.Add($"Предупреждение при привязке параметров: {ex.Message}");
-            }
         }
 
         private List<HeatLossBoundaryItem> ExtractBoundaryItemsForSpace(
