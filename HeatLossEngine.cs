@@ -238,7 +238,7 @@ namespace BCCPlugIn
 
                             if (boundElem != null)
                             {
-                                GetConstructionDimensions(boundElem, cat, seg, prevSeg, nextSeg, boundaries, roomHeight,
+                                GetConstructionDimensions(boundElem, cat, seg, prevSeg, nextSeg, loop, i, roomHeight,
                                     out lengthMm, out heightMm, out areaSqM);
                             }
                             else
@@ -248,7 +248,7 @@ namespace BCCPlugIn
                                 double tPrevFt = GetWallThicknessFt(prevElem);
                                 double tNextFt = GetWallThicknessFt(nextElem);
 
-                                double calcLengthFt = GetSpaceCroppedWallLengthFt(seg, boundaries, tPrevFt, tNextFt);
+                                double calcLengthFt = GetSpaceCroppedWallLengthFt(seg, loop, i, tPrevFt, tNextFt);
                                 lengthMm = calcLengthFt * 304.8;
                                 heightMm = roomHeight * 304.8;
                                 areaSqM  = (lengthMm / 1000.0) * (heightMm / 1000.0);
@@ -839,7 +839,7 @@ namespace BCCPlugIn
                     {
                         BuiltInCategory openCat = GetBuiltInCategory(opening);
                         double lMm = 0, hMm = 0, aSqM = 0;
-                        GetConstructionDimensions(opening, openCat, seg, null, null, null, roomHeightFt, out lMm, out hMm, out aSqM);
+                        GetConstructionDimensions(opening, openCat, seg, null, null, null, 0, roomHeightFt, out lMm, out hMm, out aSqM);
                         string label = GetConstructionLabel(opening, openCat);
                         string orient = GetOrientation(opening, openCat, seg);
 
@@ -882,7 +882,8 @@ namespace BCCPlugIn
             BoundarySegment seg,
             BoundarySegment prevSeg,
             BoundarySegment nextSeg,
-            IList<IList<BoundarySegment>> boundaries,
+            IList<BoundarySegment> loop,
+            int segIndex,
             double roomHeightFt,
             out double lengthMm,
             out double heightMm,
@@ -907,7 +908,7 @@ namespace BCCPlugIn
                     double tPrevFt = GetWallThicknessFt(prevElem);
                     double tNextFt = GetWallThicknessFt(nextElem);
 
-                    double calcLengthFt = GetSpaceCroppedWallLengthFt(seg, boundaries, tPrevFt, tNextFt);
+                    double calcLengthFt = GetSpaceCroppedWallLengthFt(seg, loop, segIndex, tPrevFt, tNextFt);
                     lengthMm = calcLengthFt * ft2mm;
 
                     // Высота стены
@@ -961,6 +962,29 @@ namespace BCCPlugIn
             catch { /* Оставляем нули */ }
         }
 
+        private static bool IsColinear(BoundarySegment s1, BoundarySegment s2)
+        {
+            if (s1 == null || s2 == null) return false;
+            Curve c1 = s1.GetCurve();
+            Curve c2 = s2.GetCurve();
+            if (c1 == null || c2 == null) return false;
+
+            XYZ p1_0 = c1.GetEndPoint(0);
+            XYZ p1_1 = c1.GetEndPoint(1);
+            XYZ p2_0 = c2.GetEndPoint(0);
+            XYZ p2_1 = c2.GetEndPoint(1);
+
+            XYZ v1 = (p1_1 - p1_0);
+            XYZ v2 = (p2_1 - p2_0);
+            if (v1.GetLength() < 0.001 || v2.GetLength() < 0.001) return false;
+
+            XYZ u1 = v1.Normalize();
+            XYZ u2 = v2.Normalize();
+
+            XYZ cross = u1.CrossProduct(u2);
+            return cross.GetLength() < 0.1;
+        }
+
         private Transform GetSegmentTransform(BoundarySegment seg)
         {
             if (seg == null) return Transform.Identity;
@@ -977,7 +1001,8 @@ namespace BCCPlugIn
 
         private double GetSpaceCroppedWallLengthFt(
             BoundarySegment seg,
-            IList<IList<BoundarySegment>> boundaries,
+            IList<BoundarySegment> loop,
+            int segIndex,
             double tPrevFt,
             double tNextFt)
         {
@@ -995,55 +1020,69 @@ namespace BCCPlugIn
 
             XYZ u = dir.Normalize();
 
-            double tMin = double.MaxValue;
-            double tMax = double.MinValue;
-            int matchCount = 0;
-
-            if (boundaries != null)
-            {
-                foreach (IList<BoundarySegment> loop in boundaries)
-                {
-                    if (loop == null) continue;
-                    foreach (BoundarySegment s in loop)
-                    {
-                        if (s == null) continue;
-                        Curve sc = s.GetCurve();
-                        if (sc == null) continue;
-
-                        Transform sTransform = GetSegmentTransform(s);
-                        XYZ pt0 = sTransform.OfPoint(sc.GetEndPoint(0));
-                        XYZ pt1 = sTransform.OfPoint(sc.GetEndPoint(1));
-
-                        foreach (XYZ pt in new[] { pt0, pt1 })
-                        {
-                            XYZ vec = pt - p0;
-                            double t = vec.DotProduct(u);
-
-                            XYZ projPt = p0 + u * t;
-                            double perpDist = pt.DistanceTo(projPt);
-
-                            if (perpDist < 2.5 && t >= -0.5 && t <= dirLen + 0.5) // В пределах 750 мм от прямой линии стены
-                            {
-                                if (t < tMin) tMin = t;
-                                if (t > tMax) tMax = t;
-                                matchCount++;
-                            }
-                        }
-                    }
-                }
-            }
-
             double spaceInnerLengthFt = c.Length;
 
-            if (matchCount >= 2 && tMax > tMin + 0.01)
+            if (loop != null && loop.Count >= 3)
             {
-                tMin = Math.Max(0.0, tMin);
-                tMax = Math.Min(dirLen, tMax);
+                int loopCount = loop.Count;
 
-                double croppedSpan = tMax - tMin;
-                if (croppedSpan > 0.01)
+                // Находим предыдущий не-коллинеарный сегмент контура
+                BoundarySegment prevCornerSeg = null;
+                for (int k = 1; k < loopCount; k++)
                 {
-                    spaceInnerLengthFt = croppedSpan;
+                    BoundarySegment candidate = loop[(segIndex - k + loopCount) % loopCount];
+                    if (candidate != null && !IsColinear(seg, candidate))
+                    {
+                        prevCornerSeg = candidate;
+                        break;
+                    }
+                }
+
+                // Находим следующий не-коллинеарный сегмент контура
+                BoundarySegment nextCornerSeg = null;
+                for (int k = 1; k < loopCount; k++)
+                {
+                    BoundarySegment candidate = loop[(segIndex + k) % loopCount];
+                    if (candidate != null && !IsColinear(seg, candidate))
+                    {
+                        nextCornerSeg = candidate;
+                        break;
+                    }
+                }
+
+                if (prevCornerSeg != null && nextCornerSeg != null)
+                {
+                    // Проекция угла prevCornerSeg
+                    Transform prevTrans = GetSegmentTransform(prevCornerSeg);
+                    Curve prevCurve = prevCornerSeg.GetCurve();
+                    XYZ pt0_prev = prevTrans.OfPoint(prevCurve.GetEndPoint(0));
+                    XYZ pt1_prev = prevTrans.OfPoint(prevCurve.GetEndPoint(1));
+
+                    double tPrev0 = (pt0_prev - p0).DotProduct(u);
+                    double tPrev1 = (pt1_prev - p0).DotProduct(u);
+
+                    double dPrev0 = pt0_prev.DistanceTo(p0 + u * tPrev0);
+                    double dPrev1 = pt1_prev.DistanceTo(p0 + u * tPrev1);
+                    double tCorner1 = (dPrev0 < dPrev1) ? tPrev0 : tPrev1;
+
+                    // Проекция угла nextCornerSeg
+                    Transform nextTrans = GetSegmentTransform(nextCornerSeg);
+                    Curve nextCurve = nextCornerSeg.GetCurve();
+                    XYZ pt0_next = nextTrans.OfPoint(nextCurve.GetEndPoint(0));
+                    XYZ pt1_next = nextTrans.OfPoint(nextCurve.GetEndPoint(1));
+
+                    double tNext0 = (pt0_next - p0).DotProduct(u);
+                    double tNext1 = (pt1_next - p0).DotProduct(u);
+
+                    double dNext0 = pt0_next.DistanceTo(p0 + u * tNext0);
+                    double dNext1 = pt1_next.DistanceTo(p0 + u * tNext1);
+                    double tCorner2 = (dNext0 < dNext1) ? tNext0 : tNext1;
+
+                    double span = Math.Abs(tCorner2 - tCorner1);
+                    if (span > 0.01 && span < dirLen + 5.0)
+                    {
+                        spaceInnerLengthFt = span;
+                    }
                 }
             }
 
@@ -1051,7 +1090,7 @@ namespace BCCPlugIn
             double extraLengthFt = (tPrevFt / 2.0) + (tNextFt / 2.0);
             double finalLengthFt = spaceInnerLengthFt + extraLengthFt;
 
-            return Math.Min(finalLengthFt, dirLen > 0 ? dirLen + extraLengthFt : finalLengthFt);
+            return finalLengthFt;
         }
 
         private Element GetElementFromSegment(BoundarySegment seg)
