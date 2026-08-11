@@ -101,7 +101,7 @@ namespace BCCPlugIn
                         space.GetBoundarySegments(boundaryOpts);
 
                     // Собрать уникальные элементы-ограждения
-                    HashSet<ElementId> processedIds = new HashSet<ElementId>();
+                    HashSet<string> processedKeys = new HashSet<string>();
 
                     foreach (IList<BoundarySegment> loop in boundaries)
                     {
@@ -109,18 +109,41 @@ namespace BCCPlugIn
                         {
                             ElementId boundElemId = seg.ElementId;
                             if (boundElemId == ElementId.InvalidElementId) continue;
-                            if (!processedIds.Add(boundElemId)) continue;
 
-                            Element boundElem = _doc.GetElement(boundElemId);
-                            if (boundElem == null) continue;
+                            Element boundElem = null;
+                            RevitLinkInstance linkInst = null;
 
-                            // Определить тип конструкции
-                            BuiltInCategory cat = GetBuiltInCategory(boundElem);
+                            Element hostElem = _doc.GetElement(boundElemId);
+                            if (hostElem is RevitLinkInstance rvtLink)
+                            {
+                                linkInst = rvtLink;
+                                Document linkedDoc = rvtLink.GetLinkDocument();
+                                if (linkedDoc != null)
+                                {
+                                    try
+                                    {
+                                        ElementId linkedElemId = seg.LinkElementId;
+                                        if (linkedElemId != null && linkedElemId != ElementId.InvalidElementId)
+                                        {
+                                            boundElem = linkedDoc.GetElement(linkedElemId);
+                                        }
+                                    }
+                                    catch { }
+                                }
+                            }
+                            else
+                            {
+                                boundElem = hostElem;
+                            }
+
+                            // Если элемент равен null (например, разделитель помещений), вычисляем категорию как Wall по умолчанию
+                            BuiltInCategory cat = boundElem != null ? GetBuiltInCategory(boundElem) : BuiltInCategory.OST_Walls;
 
                             bool isWall    = (cat == BuiltInCategory.OST_Walls);
                             bool isFloor   = (cat == BuiltInCategory.OST_Floors  ||
                                               cat == BuiltInCategory.OST_Ceilings ||
-                                              cat == BuiltInCategory.OST_StructuralFoundation);
+                                              cat == BuiltInCategory.OST_StructuralFoundation ||
+                                              cat == BuiltInCategory.OST_Roofs);
                             bool isDoor    = (cat == BuiltInCategory.OST_Doors);
                             bool isWindow  = (cat == BuiltInCategory.OST_Windows);
 
@@ -131,8 +154,15 @@ namespace BCCPlugIn
 
                             if (!isWall && !isFloor && !isDoor && !isWindow) continue;
 
-                            // Вычислить точку размещения
-                            XYZ placementPoint = GetPlacementPoint(boundElem, space, seg, roomHeight);
+                            // Ключ уникальности (с учётом линка)
+#pragma warning disable CS0618
+                            string uniqueKey = (linkInst != null ? linkInst.Id.IntegerValue.ToString() + "_" : "") +
+                                               (boundElem != null ? boundElem.Id.IntegerValue.ToString() : seg.GetCurve().Evaluate(0.5, true).ToString());
+#pragma warning restore CS0618
+                            if (!processedKeys.Add(uniqueKey)) continue;
+
+                            // Вычислить точку размещения в координатах основной модели
+                            XYZ placementPoint = GetPlacementPoint(boundElem, linkInst, space, seg, roomHeight);
                             if (placementPoint == null) continue;
 
                             // Разместить экземпляр
@@ -147,11 +177,20 @@ namespace BCCPlugIn
                             double lengthMm  = 0;
                             double heightMm  = 0;
                             double areaSqM   = 0;
-                            string label     = GetConstructionLabel(boundElem, cat);
+                            string label     = boundElem != null ? GetConstructionLabel(boundElem, cat) : "Ограждающая конструкция";
                             string orient    = GetOrientation(boundElem, cat, seg);
 
-                            GetConstructionDimensions(boundElem, cat, seg, roomHeight,
-                                out lengthMm, out heightMm, out areaSqM);
+                            if (boundElem != null)
+                            {
+                                GetConstructionDimensions(boundElem, cat, seg, roomHeight,
+                                    out lengthMm, out heightMm, out areaSqM);
+                            }
+                            else
+                            {
+                                lengthMm = seg.GetCurve().Length * 304.8;
+                                heightMm = roomHeight * 304.8;
+                                areaSqM  = (lengthMm / 1000.0) * (heightMm / 1000.0);
+                            }
 
                             // Заполнить параметры
                             SetText(inst, P_ROOM_NUMBER,  roomNumber);
@@ -176,6 +215,15 @@ namespace BCCPlugIn
                             SetNumber(inst, P_HEAT_LOSS, 0);
 
                             placedCount++;
+
+                            // Если обрабатываемый элемент — стена, и включена обработка дверей/окон,
+                            // ищем расположенные в ней двери и окна
+                            if (boundElem != null && isWall && (processDoors || processWindows))
+                            {
+                                ProcessWallOpenings(boundElem, linkInst, space, roomNumber, roomName,
+                                                    tempOutside, tempInside, symbol, seg, roomHeight,
+                                                    processDoors, processWindows, processedKeys, ref placedCount);
+                            }
                         }
                     }
                 }
@@ -409,34 +457,161 @@ namespace BCCPlugIn
         // ───────────────────────────────────────────────────────────────────
 
         /// <summary>
+        /// <summary>
         /// Точка размещения кубика — центр грани ограждения.
         /// </summary>
         private XYZ GetPlacementPoint(
-            Element elem, Space space, BoundarySegment seg, double roomHeightFt)
+            Element elem, RevitLinkInstance linkInst, Space space, BoundarySegment seg, double roomHeightFt)
         {
             try
             {
-                BoundingBoxXYZ bb = elem.get_BoundingBox(null);
-                if (bb == null)
+                // 1. Для сегмента границы наиболее точно — середина сегмента на высоте 1/2 пространства
+                if (seg != null)
                 {
-                    // Fallback: середина сегмента на половине высоты пространства
                     Curve c = seg.GetCurve();
-                    XYZ mid = c.Evaluate(0.5, true);
-                    double spaceZ = space.Level != null
-                        ? space.Level.ProjectElevation
-                        : mid.Z;
-                    return new XYZ(mid.X, mid.Y, spaceZ + roomHeightFt / 2.0);
+                    if (c != null)
+                    {
+                        XYZ mid = c.Evaluate(0.5, true);
+                        BoundingBoxXYZ sbb = space.get_BoundingBox(null);
+                        double spaceBottomZ = sbb != null ? sbb.Min.Z : (space.Level != null ? space.Level.ProjectElevation : mid.Z);
+                        return new XYZ(mid.X, mid.Y, spaceBottomZ + roomHeightFt / 2.0);
+                    }
                 }
 
-                double cx = (bb.Min.X + bb.Max.X) / 2.0;
-                double cy = (bb.Min.Y + bb.Max.Y) / 2.0;
-                double cz = (bb.Min.Z + bb.Max.Z) / 2.0;
-                return new XYZ(cx, cy, cz);
+                // 2. Фолбэк на BoundingBox элемента (с трансформацией связанной модели)
+                if (elem != null)
+                {
+                    BoundingBoxXYZ bb = elem.get_BoundingBox(null);
+                    if (bb != null)
+                    {
+                        XYZ centerLocal = (bb.Min + bb.Max) / 2.0;
+                        return linkInst != null ? linkInst.GetTotalTransform().OfPoint(centerLocal) : centerLocal;
+                    }
+                }
+
+                return null;
             }
             catch
             {
                 return null;
             }
+        }
+
+        private void ProcessWallOpenings(
+            Element wallElem,
+            RevitLinkInstance linkInst,
+            Space space,
+            string roomNumber,
+            string roomName,
+            double tempOutside,
+            double tempInside,
+            FamilySymbol symbol,
+            BoundarySegment seg,
+            double roomHeightFt,
+            bool processDoors,
+            bool processWindows,
+            HashSet<string> processedKeys,
+            ref int placedCount)
+        {
+            try
+            {
+                Document doc = wallElem.Document;
+                List<FamilyInstance> openings = new FilteredElementCollector(doc)
+                    .OfClass(typeof(FamilyInstance))
+                    .Cast<FamilyInstance>()
+                    .Where(fi => fi.Host != null && fi.Host.Id == wallElem.Id)
+                    .Where(fi =>
+                    {
+                        if (fi.Category == null) return false;
+#pragma warning disable CS0618
+                        long cId = fi.Category.Id.IntegerValue;
+#pragma warning restore CS0618
+                        bool isD = (cId == (long)BuiltInCategory.OST_Doors);
+                        bool isW = (cId == (long)BuiltInCategory.OST_Windows);
+                        return (isD && processDoors) || (isW && processWindows);
+                    })
+                    .ToList();
+
+                if (openings.Count == 0) return;
+
+                BoundingBoxXYZ spaceBbox = space.get_BoundingBox(null);
+                Transform linkTransform = linkInst != null ? linkInst.GetTotalTransform() : Transform.Identity;
+
+                foreach (FamilyInstance opening in openings)
+                {
+#pragma warning disable CS0618
+                    string openingKey = (linkInst != null ? linkInst.Id.IntegerValue.ToString() + "_" : "") + opening.Id.IntegerValue.ToString();
+#pragma warning restore CS0618
+                    if (!processedKeys.Add(openingKey)) continue;
+
+                    XYZ worldPt = null;
+                    LocationPoint locPt = opening.Location as LocationPoint;
+                    if (locPt != null)
+                    {
+                        worldPt = linkTransform.OfPoint(locPt.Point);
+                    }
+                    else
+                    {
+                        BoundingBoxXYZ obb = opening.get_BoundingBox(null);
+                        if (obb != null)
+                        {
+                            XYZ centerLocal = (obb.Min + obb.Max) / 2.0;
+                            worldPt = linkTransform.OfPoint(centerLocal);
+                        }
+                    }
+
+                    if (worldPt == null) continue;
+
+                    // Проверка близости проёма к габаритам пространства (с допуском 3.2 фута / 1 м)
+                    if (spaceBbox != null)
+                    {
+                        double tol = 3.2;
+                        if (worldPt.X < spaceBbox.Min.X - tol || worldPt.X > spaceBbox.Max.X + tol ||
+                            worldPt.Y < spaceBbox.Min.Y - tol || worldPt.Y > spaceBbox.Max.Y + tol ||
+                            worldPt.Z < spaceBbox.Min.Z - tol || worldPt.Z > spaceBbox.Max.Z + tol)
+                        {
+                            continue;
+                        }
+                    }
+
+                    FamilyInstance inst = _doc.Create.NewFamilyInstance(
+                        worldPt,
+                        symbol,
+                        Autodesk.Revit.DB.Structure.StructuralType.NonStructural);
+
+                    if (inst != null)
+                    {
+                        BuiltInCategory openCat = GetBuiltInCategory(opening);
+                        double lMm = 0, hMm = 0, aSqM = 0;
+                        GetConstructionDimensions(opening, openCat, seg, roomHeightFt, out lMm, out hMm, out aSqM);
+                        string label = GetConstructionLabel(opening, openCat);
+                        string orient = GetOrientation(opening, openCat, seg);
+
+                        SetText(inst, P_ROOM_NUMBER, roomNumber);
+                        SetText(inst, P_ROOM_NAME, roomName);
+                        SetText(inst, P_CONSTR_LABEL, label);
+                        SetText(inst, P_ORIENTATION, orient);
+                        SetText(inst, P_CORNER_TYPE, "");
+
+                        SetNumber(inst, P_TEMP_OUT, tempOutside);
+                        SetNumber(inst, P_TEMP_IN, tempInside);
+                        SetNumber(inst, P_LENGTH, lMm);
+                        SetNumber(inst, P_HEIGHT, hMm);
+                        SetNumber(inst, P_AREA, aSqM);
+                        SetNumber(inst, P_COEFF_N, 0);
+                        SetNumber(inst, P_COEFF_K, 0);
+                        SetNumber(inst, P_ADD_B1, 0);
+                        SetNumber(inst, P_ADD_B2, 0);
+                        SetNumber(inst, P_ADD_B3, 0);
+                        SetNumber(inst, P_ADD_B4, 0);
+                        SetNumber(inst, P_COEFF_ADD, 0);
+                        SetNumber(inst, P_HEAT_LOSS, 0);
+
+                        placedCount++;
+                    }
+                }
+            }
+            catch { }
         }
 
         private void GetConstructionDimensions(
