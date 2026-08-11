@@ -961,7 +961,21 @@ namespace BCCPlugIn
             catch { /* Оставляем нули */ }
         }
 
-        private static double GetSpaceCroppedWallLengthFt(
+        private Transform GetSegmentTransform(BoundarySegment seg)
+        {
+            if (seg == null) return Transform.Identity;
+            ElementId elemId = seg.ElementId;
+            if (elemId == ElementId.InvalidElementId) return Transform.Identity;
+
+            Element hostElem = _doc.GetElement(elemId);
+            if (hostElem is RevitLinkInstance rvtLink)
+            {
+                return rvtLink.GetTotalTransform();
+            }
+            return Transform.Identity;
+        }
+
+        private double GetSpaceCroppedWallLengthFt(
             BoundarySegment seg,
             IList<IList<BoundarySegment>> boundaries,
             double tPrevFt,
@@ -970,14 +984,14 @@ namespace BCCPlugIn
             Curve c = seg.GetCurve();
             if (c == null) return 0.0;
 
-            double fullCurveLength = c.Length;
-            XYZ p0 = c.GetEndPoint(0);
-            XYZ p1 = c.GetEndPoint(1);
+            Transform segTransform = GetSegmentTransform(seg);
+            XYZ p0 = segTransform.OfPoint(c.GetEndPoint(0));
+            XYZ p1 = segTransform.OfPoint(c.GetEndPoint(1));
 
             XYZ dir = (p1 - p0);
             double dirLen = dir.GetLength();
 
-            if (dirLen < 0.001) return fullCurveLength;
+            if (dirLen < 0.001) return c.Length;
 
             XYZ u = dir.Normalize();
 
@@ -996,8 +1010,9 @@ namespace BCCPlugIn
                         Curve sc = s.GetCurve();
                         if (sc == null) continue;
 
-                        XYZ pt0 = sc.GetEndPoint(0);
-                        XYZ pt1 = sc.GetEndPoint(1);
+                        Transform sTransform = GetSegmentTransform(s);
+                        XYZ pt0 = sTransform.OfPoint(sc.GetEndPoint(0));
+                        XYZ pt1 = sTransform.OfPoint(sc.GetEndPoint(1));
 
                         foreach (XYZ pt in new[] { pt0, pt1 })
                         {
@@ -1007,7 +1022,7 @@ namespace BCCPlugIn
                             XYZ projPt = p0 + u * t;
                             double perpDist = pt.DistanceTo(projPt);
 
-                            if (perpDist < 2.5) // В пределах 750 мм от прямой линии стены
+                            if (perpDist < 2.5 && t >= -0.5 && t <= dirLen + 0.5) // В пределах 750 мм от прямой линии стены
                             {
                                 if (t < tMin) tMin = t;
                                 if (t > tMax) tMax = t;
@@ -1018,7 +1033,7 @@ namespace BCCPlugIn
                 }
             }
 
-            double spaceInnerLengthFt = fullCurveLength;
+            double spaceInnerLengthFt = c.Length;
 
             if (matchCount >= 2 && tMax > tMin + 0.01)
             {
@@ -1036,7 +1051,7 @@ namespace BCCPlugIn
             double extraLengthFt = (tPrevFt / 2.0) + (tNextFt / 2.0);
             double finalLengthFt = spaceInnerLengthFt + extraLengthFt;
 
-            return finalLengthFt;
+            return Math.Min(finalLengthFt, dirLen > 0 ? dirLen + extraLengthFt : finalLengthFt);
         }
 
         private Element GetElementFromSegment(BoundarySegment seg)
