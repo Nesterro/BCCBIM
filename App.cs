@@ -85,14 +85,6 @@ namespace BCCPlugIn
                 };
                 modelPanel.AddItem(placeByXyzButtonData);
 
-                PushButtonData heatLossButtonData = new PushButtonData("BccHeatLossButton", "Теплопотери", thisAssemblyPath, typeof(HeatLossCommand).FullName)
-                {
-                    ToolTip = "Автоматический расчёт и расстановка кубиков-маркеров ограждающих конструкций в пространствах на основе связанных АР моделей.",
-                    LargeImage = getIcon("heat_loss_icon", false),
-                    Image = getIcon("heat_loss_icon", true)
-                };
-                modelPanel.AddItem(heatLossButtonData);
-
                 PushButtonData levelingButtonData = new PushButtonData("BccLevelingButton", "Привязка к\nуровням", thisAssemblyPath, typeof(LevelingCommand).FullName)
                 {
                     ToolTip = "Автоматическая привязка элементов к ближайшим уровням по высоте.",
@@ -100,6 +92,14 @@ namespace BCCPlugIn
                     Image = getIcon("leveling_icon", true)
                 };
                 modelPanel.AddItem(levelingButtonData);
+
+                PushButtonData heatLossButtonData = new PushButtonData("BccHeatLossButton", "Тепло-\nпотери", thisAssemblyPath, typeof(HeatLossCommand).FullName)
+                {
+                    ToolTip = "Расстановка кубиков теплопотерь по ограждающим конструкциям помещений и создание спецификации.",
+                    LargeImage = getIcon("heat_loss_icon", false),
+                    Image = getIcon("heat_loss_icon", true)
+                };
+                modelPanel.AddItem(heatLossButtonData);
 
                 // ----------------------------------------------------
                 // 3. Panel "Параметры"
