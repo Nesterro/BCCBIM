@@ -163,6 +163,19 @@
                                Foreground="#7A5C00" FontSize="12" TextWrapping="Wrap"/>
                 </Border>
 
+                <!-- Область расстановки -->
+                <Border Background="#F8F9FA" BorderBrush="#EAEAEA" BorderThickness="1"
+                        CornerRadius="6" Padding="14" Margin="0,0,0,12">
+                    <StackPanel>
+                        <TextBlock Text="Область расстановки:"
+                                   FontWeight="SemiBold" Foreground="#595959" Margin="0,0,0,8"/>
+                        <RadioButton x:Name="AllSpacesRadioButton" Content="🌐 Во всём проекте"
+                                     IsChecked="True" GroupName="ScopeGroup" Margin="0,0,0,6" Checked="Scope_Checked"/>
+                        <RadioButton x:Name="ActiveViewRadioButton" Content="👁️ Только на текущем виде"
+                                     GroupName="ScopeGroup" Checked="Scope_Checked"/>
+                    </StackPanel>
+                </Border>
+
                 <!-- Семейство-кубик -->
                 <Border Background="#F8F9FA" BorderBrush="#EAEAEA" BorderThickness="1"
                         CornerRadius="6" Padding="14" Margin="0,0,0,12">
