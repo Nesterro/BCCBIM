@@ -876,46 +876,65 @@ namespace BCCPlugIn
             if (elem == null) return "НС1";
 
             ElementId typeId = elem.GetTypeId();
-            if (typeId == null || typeId == ElementId.InvalidElementId) return "НС1";
+            if (typeId == null || typeId == ElementId.InvalidElementId) typeId = elem.Id;
 
             if (_typeCodeMap != null && _typeCodeMap.TryGetValue(typeId, out string existingCode))
             {
                 return existingCode;
             }
 
-            string prefix = "КН";
+            string prefix = "НС"; // По умолчанию для ограждений — Наружная Стена (НС)
 
-            if (cat == BuiltInCategory.OST_Walls)
+            Category category = elem.Category;
+            BuiltInCategory bCat = cat;
+            if (category != null)
             {
-                bool isExterior = false;
+                try { bCat = category.BuiltInCategory; } catch { }
+            }
+
+            string catName = category?.Name ?? "";
+
+            // 1. Стены
+            if (elem is Wall || bCat == BuiltInCategory.OST_Walls || catName.IndexOf("Стен", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                bool isInterior = false;
                 if (elem is Wall wall)
                 {
                     try
                     {
-                        if (wall.WallType != null && wall.WallType.Function == WallFunction.Exterior)
-                            isExterior = true;
+                        if (wall.WallType != null && wall.WallType.Function == WallFunction.Interior)
+                            isInterior = true;
                     }
                     catch { }
                 }
-                prefix = isExterior ? "НС" : "ВС";
+
+                prefix = isInterior ? "ВС" : "НС";
             }
-            else if (cat == BuiltInCategory.OST_Windows)
+            // 2. Окна
+            else if (bCat == BuiltInCategory.OST_Windows || catName.IndexOf("Окн", StringComparison.OrdinalIgnoreCase) >= 0)
             {
                 prefix = "ОК";
             }
-            else if (cat == BuiltInCategory.OST_Doors)
+            // 3. Двери
+            else if (bCat == BuiltInCategory.OST_Doors || catName.IndexOf("Двер", StringComparison.OrdinalIgnoreCase) >= 0)
             {
                 prefix = "ДВ";
             }
-            else if (cat == BuiltInCategory.OST_Floors || cat == BuiltInCategory.OST_StructuralFoundation)
+            // 4. Перекрытия и полы
+            else if (elem is Floor || bCat == BuiltInCategory.OST_Floors || bCat == BuiltInCategory.OST_StructuralFoundation ||
+                     catName.IndexOf("Перекрыт", StringComparison.OrdinalIgnoreCase) >= 0 || catName.IndexOf("Фундамент", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                     catName.IndexOf("Пол", StringComparison.OrdinalIgnoreCase) >= 0)
             {
                 prefix = "ПР";
             }
-            else if (cat == BuiltInCategory.OST_Ceilings)
+            // 5. Потолки
+            else if (bCat == BuiltInCategory.OST_Ceilings || catName.IndexOf("Потол", StringComparison.OrdinalIgnoreCase) >= 0)
             {
                 prefix = "ПОТ";
             }
-            else if (cat == BuiltInCategory.OST_Roofs)
+            // 6. Кровля / Крыши
+            else if (elem is RoofBase || bCat == BuiltInCategory.OST_Roofs ||
+                     catName.IndexOf("Кровл", StringComparison.OrdinalIgnoreCase) >= 0 || catName.IndexOf("Крыш", StringComparison.OrdinalIgnoreCase) >= 0)
             {
                 prefix = "КР";
             }
@@ -964,9 +983,16 @@ namespace BCCPlugIn
         private static BuiltInCategory GetBuiltInCategory(Element elem)
         {
             if (elem?.Category == null) return BuiltInCategory.INVALID;
+            try
+            {
+                return elem.Category.BuiltInCategory;
+            }
+            catch
+            {
 #pragma warning disable CS0618
-            return (BuiltInCategory)elem.Category.Id.IntegerValue;
+                return (BuiltInCategory)elem.Category.Id.IntegerValue;
 #pragma warning restore CS0618
+            }
         }
     }
 }
