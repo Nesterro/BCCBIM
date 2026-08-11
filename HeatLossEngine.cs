@@ -93,8 +93,8 @@ namespace BCCPlugIn
 
                 foreach (Space space in spaces)
                 {
-                    string roomNumber = space.Number ?? "";
-                    string roomName   = space.Name   ?? "";
+                    string roomNumber, roomName;
+                    GetSpaceRoomNumberAndName(space, out roomNumber, out roomName);
                     double roomHeight = space.UnboundedHeight; // футы
 
                     IList<IList<BoundarySegment>> boundaries =
@@ -186,12 +186,59 @@ namespace BCCPlugIn
             return placedCount;
         }
 
+        private void GetSpaceRoomNumberAndName(Space space, out string roomNumber, out string roomName)
+        {
+            roomNumber = "";
+            roomName = "";
+
+            // 1. Попытка через BuiltInParameter связанных помещений
+            try
+            {
+                Parameter pNum = space.get_Parameter(BuiltInParameter.SPACE_ASSOC_ROOM_NUMBER);
+                if (pNum != null && pNum.HasValue) roomNumber = pNum.AsString();
+            }
+            catch { }
+
+            try
+            {
+                Parameter pName = space.get_Parameter(BuiltInParameter.SPACE_ASSOC_ROOM_NAME);
+                if (pName != null && pName.HasValue) roomName = pName.AsString();
+            }
+            catch { }
+
+            // 2. Попытка через LookupParameter (стандартные параметры сопоставления)
+            if (string.IsNullOrWhiteSpace(roomNumber))
+            {
+                Parameter p = space.LookupParameter("Номер помещения") ?? space.LookupParameter("Номер связанного помещения");
+                if (p != null && p.HasValue) roomNumber = p.AsString();
+            }
+            if (string.IsNullOrWhiteSpace(roomName))
+            {
+                Parameter p = space.LookupParameter("Имя помещения") ?? space.LookupParameter("Имя связанного помещения");
+                if (p != null && p.HasValue) roomName = p.AsString();
+            }
+
+            // 3. Фолбэк на собственные номер/имя пространства
+            if (string.IsNullOrWhiteSpace(roomNumber))
+            {
+                roomNumber = space.Number;
+            }
+            if (string.IsNullOrWhiteSpace(roomName))
+            {
+                roomName = space.Name;
+            }
+
+            if (roomNumber == null) roomNumber = "";
+            if (roomName == null) roomName = "";
+        }
+
         // ───────────────────────────────────────────────────────────────────
         // Создание / обновление спецификации
         // ───────────────────────────────────────────────────────────────────
-        public string CreateOrUpdateSchedule()
+        public string CreateOrUpdateSchedule(out string errorMessage)
         {
             const string schedName = "BIMBCC Теплопотери";
+            errorMessage = null;
 
             try
             {
@@ -227,14 +274,13 @@ namespace BCCPlugIn
                         P_COEFF_ADD, P_HEAT_LOSS
                     };
 
-                    // Собрать доступные поля
+                    // Собрать доступные поля (без ToDictionary во избежание выброса ошибок на дубликаты имён)
                     IList<SchedulableField> schedulable = def.GetSchedulableFields();
-                    Dictionary<string, SchedulableField> fieldMap =
-                        schedulable.ToDictionary(f => f.GetName(_doc), f => f);
 
                     foreach (string paramName in fieldOrder)
                     {
-                        if (fieldMap.TryGetValue(paramName, out SchedulableField sf))
+                        SchedulableField sf = schedulable.FirstOrDefault(f => f.GetName(_doc) == paramName);
+                        if (sf != null)
                         {
                             def.AddField(sf);
                         }
@@ -264,6 +310,7 @@ namespace BCCPlugIn
             }
             catch (Exception ex)
             {
+                errorMessage = ex.Message;
                 System.Diagnostics.Debug.WriteLine(
                     $"[HeatLossEngine] CreateOrUpdateSchedule failed: {ex.Message}");
                 return null;
