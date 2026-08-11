@@ -27,7 +27,7 @@ namespace BCCPlugIn
             SetWindowIcon();
 
             // Инфо-строка
-            InfoTextBlock.Text = $"Найдено помещений с объёмом: {roomCount}";
+            InfoTextBlock.Text = $"Найдено пространств MEP с объёмом: {roomCount}";
 
             // Заполнить ComboBox
             _items = symbols
