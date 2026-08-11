@@ -30,14 +30,23 @@ namespace BCCPlugIn
             try
             {
                 // ── 1. Проверить наличие пространств ────────────────────────
-                List<Space> spaces = new FilteredElementCollector(doc)
+                int allSpacesCount = new FilteredElementCollector(doc)
                     .OfCategory(BuiltInCategory.OST_MEPSpaces)
                     .WhereElementIsNotElementType()
                     .Cast<Space>()
-                    .Where(s => s.Area > 0)
-                    .ToList();
+                    .Count(s => s.Area > 0);
 
-                if (spaces.Count == 0)
+                int activeViewSpacesCount = 0;
+                if (doc.ActiveView != null)
+                {
+                    activeViewSpacesCount = new FilteredElementCollector(doc, doc.ActiveView.Id)
+                        .OfCategory(BuiltInCategory.OST_MEPSpaces)
+                        .WhereElementIsNotElementType()
+                        .Cast<Space>()
+                        .Count(s => s.Area > 0);
+                }
+
+                if (allSpacesCount == 0)
                 {
                     MessageBox.Show(
                         "В модели не найдено ни одного пространства (MEP Space) с площадью > 0.\n" +
@@ -66,14 +75,43 @@ namespace BCCPlugIn
                 }
 
                 // ── 3. Показать диалог ────────────────────────────────────────
-                HeatLossWindow window = new HeatLossWindow(genericSymbols, spaces.Count);
+                HeatLossWindow window = new HeatLossWindow(genericSymbols, allSpacesCount, activeViewSpacesCount);
                 WindowInteropHelper helper = new WindowInteropHelper(window);
                 helper.Owner = uiapp.MainWindowHandle;
 
                 if (window.ShowDialog() != true)
                     return Result.Cancelled;
 
-                // ── 4. Запустить движок ───────────────────────────────────────
+                // ── 4. Собрать пространства согласно выбору области ─────────
+                List<Space> spaces;
+                if (window.OnlyActiveView && doc.ActiveView != null)
+                {
+                    spaces = new FilteredElementCollector(doc, doc.ActiveView.Id)
+                        .OfCategory(BuiltInCategory.OST_MEPSpaces)
+                        .WhereElementIsNotElementType()
+                        .Cast<Space>()
+                        .Where(s => s.Area > 0)
+                        .ToList();
+                }
+                else
+                {
+                    spaces = new FilteredElementCollector(doc)
+                        .OfCategory(BuiltInCategory.OST_MEPSpaces)
+                        .WhereElementIsNotElementType()
+                        .Cast<Space>()
+                        .Where(s => s.Area > 0)
+                        .ToList();
+                }
+
+                if (spaces.Count == 0)
+                {
+                    MessageBox.Show(
+                        "В выбранной области не найдено пространств для обработки.",
+                        "Теплопотери", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return Result.Succeeded;
+                }
+
+                // ── 5. Запустить движок ───────────────────────────────────────
                 HeatLossEngine engine = new HeatLossEngine(doc);
 
                 int placedCount = engine.Run(
