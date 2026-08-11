@@ -87,7 +87,8 @@ namespace BCCPlugIn
                     window.ProcessWindows);
 
                 // ── 5. Создать / обновить спецификацию ───────────────────────
-                string schedName = engine.CreateOrUpdateSchedule();
+                string schedError;
+                string schedName = engine.CreateOrUpdateSchedule(out schedError);
 
                 TaskDialog td = new TaskDialog("BIMBCC | Теплопотери");
                 td.MainInstruction = "Расстановка завершена!";
@@ -96,7 +97,7 @@ namespace BCCPlugIn
                     $"Пространств обработано:  {spaces.Count}\n" +
                     (schedName != null
                         ? $"Спецификация:  «{schedName}» создана/обновлена."
-                        : "Спецификацию создать не удалось (см. журнал).");
+                        : $"Спецификацию создать не удалось: {schedError}");
                 td.Show();
 
                 return Result.Succeeded;
