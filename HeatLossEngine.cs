@@ -156,8 +156,13 @@ namespace BCCPlugIn
 
                     foreach (IList<BoundarySegment> loop in boundaries)
                     {
-                        foreach (BoundarySegment seg in loop)
+                        int loopCount = loop.Count;
+                        for (int i = 0; i < loopCount; i++)
                         {
+                            BoundarySegment seg = loop[i];
+                            BoundarySegment prevSeg = loop[(i - 1 + loopCount) % loopCount];
+                            BoundarySegment nextSeg = loop[(i + 1) % loopCount];
+
                             ElementId boundElemId = seg.ElementId;
                             if (boundElemId == ElementId.InvalidElementId) continue;
 
@@ -224,7 +229,7 @@ namespace BCCPlugIn
 
                             if (inst == null) continue;
 
-                            // Вычислить геометрические характеристики
+                            // Вычислить геометрические характеристики с припуском до осей смежных стен
                             double lengthMm  = 0;
                             double heightMm  = 0;
                             double areaSqM   = 0;
@@ -233,12 +238,17 @@ namespace BCCPlugIn
 
                             if (boundElem != null)
                             {
-                                GetConstructionDimensions(boundElem, cat, seg, roomHeight,
+                                GetConstructionDimensions(boundElem, cat, seg, prevSeg, nextSeg, roomHeight,
                                     out lengthMm, out heightMm, out areaSqM);
                             }
                             else
                             {
-                                lengthMm = seg.GetCurve().Length * 304.8;
+                                double innerLengthFt = seg.GetCurve().Length;
+                                Element prevElem = GetElementFromSegment(prevSeg);
+                                Element nextElem = GetElementFromSegment(nextSeg);
+                                double extraLengthFt = (GetWallThicknessFt(prevElem) / 2.0) + (GetWallThicknessFt(nextElem) / 2.0);
+
+                                lengthMm = (innerLengthFt + extraLengthFt) * 304.8;
                                 heightMm = roomHeight * 304.8;
                                 areaSqM  = (lengthMm / 1000.0) * (heightMm / 1000.0);
                             }
@@ -828,7 +838,7 @@ namespace BCCPlugIn
                     {
                         BuiltInCategory openCat = GetBuiltInCategory(opening);
                         double lMm = 0, hMm = 0, aSqM = 0;
-                        GetConstructionDimensions(opening, openCat, seg, roomHeightFt, out lMm, out hMm, out aSqM);
+                        GetConstructionDimensions(opening, openCat, seg, null, null, roomHeightFt, out lMm, out hMm, out aSqM);
                         string label = GetConstructionLabel(opening, openCat);
                         string orient = GetOrientation(opening, openCat, seg);
 
@@ -869,6 +879,8 @@ namespace BCCPlugIn
             Element elem,
             BuiltInCategory cat,
             BoundarySegment seg,
+            BoundarySegment prevSeg,
+            BoundarySegment nextSeg,
             double roomHeightFt,
             out double lengthMm,
             out double heightMm,
@@ -886,20 +898,32 @@ namespace BCCPlugIn
                 if (cat == BuiltInCategory.OST_Walls)
                 {
                     Wall wall = elem as Wall;
-                    if (wall != null)
+                    Curve c = seg.GetCurve();
+                    double innerLengthFt = c.Length;
+
+                    // Припуск до осей примыкающих стен: halfPrevThickness + halfNextThickness
+                    double extraLengthFt = 0.0;
+                    if (prevSeg != null || nextSeg != null)
                     {
-                        // Длина по сегменту
-                        Curve c = seg.GetCurve();
-                        lengthMm = c.Length * ft2mm;
+                        Element prevElem = GetElementFromSegment(prevSeg);
+                        Element nextElem = GetElementFromSegment(nextSeg);
 
-                        // Высота стены
-                        Parameter hParam = wall.get_Parameter(BuiltInParameter.WALL_USER_HEIGHT_PARAM);
-                        heightMm = hParam != null
-                            ? hParam.AsDouble() * ft2mm
-                            : roomHeightFt * ft2mm;
+                        double tPrevFt = GetWallThicknessFt(prevElem);
+                        double tNextFt = GetWallThicknessFt(nextElem);
 
-                        areaSqM = (lengthMm / 1000.0) * (heightMm / 1000.0);
+                        extraLengthFt = (tPrevFt / 2.0) + (tNextFt / 2.0);
                     }
+
+                    double calcLengthFt = innerLengthFt + extraLengthFt;
+                    lengthMm = calcLengthFt * ft2mm;
+
+                    // Высота стены
+                    Parameter hParam = wall != null ? wall.get_Parameter(BuiltInParameter.WALL_USER_HEIGHT_PARAM) : null;
+                    heightMm = (hParam != null && hParam.HasValue && hParam.AsDouble() > 0)
+                        ? hParam.AsDouble() * ft2mm
+                        : roomHeightFt * ft2mm;
+
+                    areaSqM = (lengthMm / 1000.0) * (heightMm / 1000.0);
                 }
                 else if (cat == BuiltInCategory.OST_Floors ||
                          cat == BuiltInCategory.OST_Ceilings ||
@@ -942,6 +966,45 @@ namespace BCCPlugIn
                 }
             }
             catch { /* Оставляем нули */ }
+        }
+
+        private Element GetElementFromSegment(BoundarySegment seg)
+        {
+            if (seg == null) return null;
+            ElementId elemId = seg.ElementId;
+            if (elemId == ElementId.InvalidElementId) return null;
+
+            Element hostElem = _doc.GetElement(elemId);
+            if (hostElem is RevitLinkInstance rvtLink)
+            {
+                Document linkedDoc = rvtLink.GetLinkDocument();
+                if (linkedDoc != null)
+                {
+                    try
+                    {
+                        ElementId linkedElemId = seg.LinkElementId;
+                        if (linkedElemId != null && linkedElemId != ElementId.InvalidElementId)
+                        {
+                            return linkedDoc.GetElement(linkedElemId);
+                        }
+                    }
+                    catch { }
+                }
+            }
+            return hostElem;
+        }
+
+        private static double GetWallThicknessFt(Element elem)
+        {
+            if (elem is Wall wall)
+            {
+                try
+                {
+                    return wall.Width; // Толщина стены в футах
+                }
+                catch { }
+            }
+            return 0.0;
         }
 
         /// <summary>
