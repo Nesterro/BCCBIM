@@ -18,16 +18,22 @@ namespace BCCPlugIn
         public bool ProcessDoors   => DoorsCheckBox.IsChecked   == true;
         public bool ProcessWindows => WindowsCheckBox.IsChecked == true;
 
+        public bool OnlyActiveView => ActiveViewRadioButton.IsChecked == true;
+
         private readonly List<FamilySymbolItem> _items;
+        private readonly int _allSpacesCount;
+        private readonly int _activeViewSpacesCount;
 
         // ── Конструктор ───────────────────────────────────────────────────
-        public HeatLossWindow(List<FamilySymbol> symbols, int roomCount)
+        public HeatLossWindow(List<FamilySymbol> symbols, int allSpacesCount, int activeViewSpacesCount)
         {
             InitializeComponent();
             SetWindowIcon();
 
-            // Инфо-строка
-            InfoTextBlock.Text = $"Найдено пространств MEP с объёмом: {roomCount}";
+            _allSpacesCount = allSpacesCount;
+            _activeViewSpacesCount = activeViewSpacesCount;
+
+            UpdateInfoText();
 
             // Заполнить ComboBox
             _items = symbols
@@ -40,6 +46,25 @@ namespace BCCPlugIn
 
             if (_items.Count > 0)
                 FamilyComboBox.SelectedIndex = 0;
+        }
+
+        private void Scope_Checked(object sender, RoutedEventArgs e)
+        {
+            UpdateInfoText();
+        }
+
+        private void UpdateInfoText()
+        {
+            if (InfoTextBlock == null) return;
+
+            if (OnlyActiveView)
+            {
+                InfoTextBlock.Text = $"Найдено пространств на текущем виде: {_activeViewSpacesCount}";
+            }
+            else
+            {
+                InfoTextBlock.Text = $"Найдено пространств во всём проекте: {_allSpacesCount}";
+            }
         }
 
         // ── Иконка окна ───────────────────────────────────────────────────
