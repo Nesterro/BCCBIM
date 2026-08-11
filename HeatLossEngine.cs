@@ -413,9 +413,9 @@ namespace BCCPlugIn
                         if (sf != null)
                         {
                             ScheduleField addedField = def.AddField(sf);
-                            if (paramName == P_AREA)
+                            if (paramName == P_AREA || paramName == P_HEAT_LOSS)
                             {
-                                addedField.DisplayType = ScheduleFieldDisplayType.Totals; // Вычисление итогов по площади!
+                                addedField.DisplayType = ScheduleFieldDisplayType.Totals; // Вычисление итогов по площади и теплопотерям!
                             }
                         }
                     }
@@ -478,6 +478,134 @@ namespace BCCPlugIn
                     $"[HeatLossEngine] CreateOrUpdateSchedule failed: {ex.Message}");
                 return null;
             }
+        }
+
+        // ───────────────────────────────────────────────────────────────────
+        // Сбор уникальных типов конструкций для задания коэффициентов k
+        // ───────────────────────────────────────────────────────────────────
+        public List<HeatLossCoeffItem> GetPlacedConstructionTypes()
+        {
+            List<FamilyInstance> cubes = new FilteredElementCollector(_doc)
+                .OfClass(typeof(FamilyInstance))
+                .OfCategory(BuiltInCategory.OST_GenericModel)
+                .Cast<FamilyInstance>()
+                .Where(fi => fi.LookupParameter(P_CONSTR_LABEL) != null)
+                .ToList();
+
+            Dictionary<string, string> uniqueTypes = new Dictionary<string, string>();
+
+            foreach (var cube in cubes)
+            {
+                string label = GetText(cube, P_CONSTR_LABEL);
+                if (string.IsNullOrEmpty(label)) continue;
+
+                if (!uniqueTypes.ContainsKey(label))
+                {
+                    string name = GetFriendlyTypeName(label);
+                    uniqueTypes[label] = name;
+                }
+            }
+
+            return uniqueTypes
+                .Select(kvp => new HeatLossCoeffItem
+                {
+                    Code = kvp.Key,
+                    Name = kvp.Value,
+                    CoeffK = GetDefaultCoeffK(kvp.Key)
+                })
+                .OrderBy(item => item.Code)
+                .ToList();
+        }
+
+        private static string GetFriendlyTypeName(string code)
+        {
+            if (code.StartsWith("НС")) return "Наружная стена";
+            if (code.StartsWith("ВС")) return "Внутренняя стена";
+            if (code.StartsWith("ОК")) return "Окно";
+            if (code.StartsWith("ДВ")) return "Дверь";
+            if (code.StartsWith("ПР")) return "Перекрытие / Пол";
+            if (code.StartsWith("ПОТ")) return "Потолок";
+            if (code.StartsWith("КР")) return "Кровля / Крыша";
+            return "Ограждающая конструкция";
+        }
+
+        private static double GetDefaultCoeffK(string code)
+        {
+            if (code.StartsWith("НС")) return 0.35;
+            if (code.StartsWith("ВС")) return 0.60;
+            if (code.StartsWith("ОК")) return 1.30;
+            if (code.StartsWith("ДВ")) return 1.80;
+            if (code.StartsWith("ПР")) return 0.45;
+            if (code.StartsWith("ПОТ")) return 0.50;
+            if (code.StartsWith("КР")) return 0.25;
+            return 1.0;
+        }
+
+        // ───────────────────────────────────────────────────────────────────
+        // Вторая транзакция: Запись k и расчет Q = (t_in - t_out)*S*n*k*CoeffAdd
+        // ───────────────────────────────────────────────────────────────────
+        public int ApplyCoefficientsAndCalculateHeatLoss(Dictionary<string, double> coeffKMap)
+        {
+            List<FamilyInstance> cubes = new FilteredElementCollector(_doc)
+                .OfClass(typeof(FamilyInstance))
+                .OfCategory(BuiltInCategory.OST_GenericModel)
+                .Cast<FamilyInstance>()
+                .Where(fi => fi.LookupParameter(P_CONSTR_LABEL) != null)
+                .ToList();
+
+            int updatedCount = 0;
+
+            using (Transaction tx = new Transaction(_doc, "BIMBCC | Запись коэффициентов и расчёт теплопотерь"))
+            {
+                tx.Start();
+
+                foreach (FamilyInstance cube in cubes)
+                {
+                    string label = GetText(cube, P_CONSTR_LABEL);
+                    if (string.IsNullOrEmpty(label)) continue;
+
+                    if (coeffKMap.TryGetValue(label, out double coeffK))
+                    {
+                        // 1. Записать коэффициент теплопередачи k
+                        SetNumber(cube, P_COEFF_K, coeffK);
+
+                        // 2. Считать параметры для расчёта Q
+                        double tOut = GetNumber(cube, P_TEMP_OUT);
+                        double tIn = GetNumber(cube, P_TEMP_IN);
+                        double area = GetNumber(cube, P_AREA);
+                        double n = GetNumber(cube, P_COEFF_N);
+                        double coeffAdd = GetNumber(cube, P_COEFF_ADD);
+
+                        // Формула: Q = (t_in - t_out) * Area * n * k * CoeffAdd
+                        double deltaT = tIn - tOut;
+                        double qHeatLoss = deltaT * area * n * coeffK * coeffAdd;
+
+                        // 3. Записать итоговые теплопотери Q (Вт)
+                        SetNumber(cube, P_HEAT_LOSS, Math.Round(qHeatLoss, 2));
+
+                        updatedCount++;
+                    }
+                }
+
+                tx.Commit();
+            }
+
+            return updatedCount;
+        }
+
+        private static double GetNumber(Element elem, string paramName)
+        {
+            Parameter p = elem.LookupParameter(paramName);
+            if (p != null && p.HasValue)
+            {
+                if (p.StorageType == StorageType.Double)
+                    return p.AsDouble();
+                if (p.StorageType == StorageType.Integer)
+                    return p.AsInteger();
+                if (p.StorageType == StorageType.String && double.TryParse(p.AsString().Replace(',', '.'), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double val))
+                    return val;
+            }
+            return 0.0;
         }
 
         // ───────────────────────────────────────────────────────────────────
@@ -965,6 +1093,12 @@ namespace BCCPlugIn
             Parameter p = elem.LookupParameter(paramName);
             if (p != null && !p.IsReadOnly && p.StorageType == StorageType.String)
                 p.Set(value ?? "");
+        }
+
+        private static string GetText(Element elem, string paramName)
+        {
+            Parameter p = elem.LookupParameter(paramName);
+            return p?.AsString() ?? "";
         }
 
         private static void SetNumber(Element elem, string paramName, double value)
