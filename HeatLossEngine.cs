@@ -572,7 +572,7 @@ namespace BCCPlugIn
         {
             if (elem?.Category == null) return BuiltInCategory.INVALID;
 #pragma warning disable CS0618
-            return (BuiltInCategory)(int)elem.Category.Id.Value;
+            return (BuiltInCategory)elem.Category.Id.IntegerValue;
 #pragma warning restore CS0618
         }
     }
