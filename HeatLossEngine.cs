@@ -2,13 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
-using Autodesk.Revit.DB.Architecture;
+using Autodesk.Revit.DB.Mechanical;
+
 
 namespace BCCPlugIn
 {
     /// <summary>
     /// Основной движок модуля «Теплопотери».
-    /// Для каждого помещения находит все ограждающие конструкции,
+    /// Для каждого MEP-пространства (Space) находит все ограждающие конструкции,
     /// размещает экземпляр семейства-кубика и заполняет 18 параметров.
     /// </summary>
     public class HeatLossEngine
@@ -56,7 +57,7 @@ namespace BCCPlugIn
         // Главный метод
         // ───────────────────────────────────────────────────────────────────
         public int Run(
-            List<Room> rooms,
+            List<Space> spaces,
             FamilySymbol symbol,
             double tempOutside,
             double tempInside,
@@ -90,14 +91,14 @@ namespace BCCPlugIn
                     SpatialElementBoundaryLocation = SpatialElementBoundaryLocation.Finish
                 };
 
-                foreach (Room room in rooms)
+                foreach (Space space in spaces)
                 {
-                    string roomNumber = room.Number ?? "";
-                    string roomName   = room.Name   ?? "";
-                    double roomHeight = room.UnboundedHeight; // футы
+                    string roomNumber = space.Number ?? "";
+                    string roomName   = space.Name   ?? "";
+                    double roomHeight = space.UnboundedHeight; // футы
 
                     IList<IList<BoundarySegment>> boundaries =
-                        room.GetBoundarySegments(boundaryOpts);
+                        space.GetBoundarySegments(boundaryOpts);
 
                     // Собрать уникальные элементы-ограждения
                     HashSet<ElementId> processedIds = new HashSet<ElementId>();
@@ -131,7 +132,7 @@ namespace BCCPlugIn
                             if (!isWall && !isFloor && !isDoor && !isWindow) continue;
 
                             // Вычислить точку размещения
-                            XYZ placementPoint = GetPlacementPoint(boundElem, room, seg, roomHeight);
+                            XYZ placementPoint = GetPlacementPoint(boundElem, space, seg, roomHeight);
                             if (placementPoint == null) continue;
 
                             // Разместить экземпляр
@@ -364,20 +365,20 @@ namespace BCCPlugIn
         /// Точка размещения кубика — центр грани ограждения.
         /// </summary>
         private XYZ GetPlacementPoint(
-            Element elem, Room room, BoundarySegment seg, double roomHeightFt)
+            Element elem, Space space, BoundarySegment seg, double roomHeightFt)
         {
             try
             {
                 BoundingBoxXYZ bb = elem.get_BoundingBox(null);
                 if (bb == null)
                 {
-                    // Fallback: середина сегмента на половине высоты помещения
+                    // Fallback: середина сегмента на половине высоты пространства
                     Curve c = seg.GetCurve();
                     XYZ mid = c.Evaluate(0.5, true);
-                    double roomZ = room.Level != null
-                        ? room.Level.ProjectElevation
+                    double spaceZ = space.Level != null
+                        ? space.Level.ProjectElevation
                         : mid.Z;
-                    return new XYZ(mid.X, mid.Y, roomZ + roomHeightFt / 2.0);
+                    return new XYZ(mid.X, mid.Y, spaceZ + roomHeightFt / 2.0);
                 }
 
                 double cx = (bb.Min.X + bb.Max.X) / 2.0;
