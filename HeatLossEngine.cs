@@ -238,17 +238,18 @@ namespace BCCPlugIn
 
                             if (boundElem != null)
                             {
-                                GetConstructionDimensions(boundElem, cat, seg, prevSeg, nextSeg, roomHeight,
+                                GetConstructionDimensions(boundElem, cat, seg, prevSeg, nextSeg, boundaries, roomHeight,
                                     out lengthMm, out heightMm, out areaSqM);
                             }
                             else
                             {
-                                double innerLengthFt = seg.GetCurve().Length;
                                 Element prevElem = GetElementFromSegment(prevSeg);
                                 Element nextElem = GetElementFromSegment(nextSeg);
-                                double extraLengthFt = (GetWallThicknessFt(prevElem) / 2.0) + (GetWallThicknessFt(nextElem) / 2.0);
+                                double tPrevFt = GetWallThicknessFt(prevElem);
+                                double tNextFt = GetWallThicknessFt(nextElem);
 
-                                lengthMm = (innerLengthFt + extraLengthFt) * 304.8;
+                                double calcLengthFt = GetSpaceCroppedWallLengthFt(seg, boundaries, tPrevFt, tNextFt);
+                                lengthMm = calcLengthFt * 304.8;
                                 heightMm = roomHeight * 304.8;
                                 areaSqM  = (lengthMm / 1000.0) * (heightMm / 1000.0);
                             }
@@ -838,7 +839,7 @@ namespace BCCPlugIn
                     {
                         BuiltInCategory openCat = GetBuiltInCategory(opening);
                         double lMm = 0, hMm = 0, aSqM = 0;
-                        GetConstructionDimensions(opening, openCat, seg, null, null, roomHeightFt, out lMm, out hMm, out aSqM);
+                        GetConstructionDimensions(opening, openCat, seg, null, null, null, roomHeightFt, out lMm, out hMm, out aSqM);
                         string label = GetConstructionLabel(opening, openCat);
                         string orient = GetOrientation(opening, openCat, seg);
 
@@ -881,6 +882,7 @@ namespace BCCPlugIn
             BoundarySegment seg,
             BoundarySegment prevSeg,
             BoundarySegment nextSeg,
+            IList<IList<BoundarySegment>> boundaries,
             double roomHeightFt,
             out double lengthMm,
             out double heightMm,
@@ -898,23 +900,14 @@ namespace BCCPlugIn
                 if (cat == BuiltInCategory.OST_Walls)
                 {
                     Wall wall = elem as Wall;
-                    Curve c = seg.GetCurve();
-                    double innerLengthFt = c.Length;
 
-                    // Припуск до осей примыкающих стен: halfPrevThickness + halfNextThickness
-                    double extraLengthFt = 0.0;
-                    if (prevSeg != null || nextSeg != null)
-                    {
-                        Element prevElem = GetElementFromSegment(prevSeg);
-                        Element nextElem = GetElementFromSegment(nextSeg);
+                    Element prevElem = GetElementFromSegment(prevSeg);
+                    Element nextElem = GetElementFromSegment(nextSeg);
 
-                        double tPrevFt = GetWallThicknessFt(prevElem);
-                        double tNextFt = GetWallThicknessFt(nextElem);
+                    double tPrevFt = GetWallThicknessFt(prevElem);
+                    double tNextFt = GetWallThicknessFt(nextElem);
 
-                        extraLengthFt = (tPrevFt / 2.0) + (tNextFt / 2.0);
-                    }
-
-                    double calcLengthFt = innerLengthFt + extraLengthFt;
+                    double calcLengthFt = GetSpaceCroppedWallLengthFt(seg, boundaries, tPrevFt, tNextFt);
                     lengthMm = calcLengthFt * ft2mm;
 
                     // Высота стены
@@ -966,6 +959,84 @@ namespace BCCPlugIn
                 }
             }
             catch { /* Оставляем нули */ }
+        }
+
+        private static double GetSpaceCroppedWallLengthFt(
+            BoundarySegment seg,
+            IList<IList<BoundarySegment>> boundaries,
+            double tPrevFt,
+            double tNextFt)
+        {
+            Curve c = seg.GetCurve();
+            if (c == null) return 0.0;
+
+            double fullCurveLength = c.Length;
+            XYZ p0 = c.GetEndPoint(0);
+            XYZ p1 = c.GetEndPoint(1);
+
+            XYZ dir = (p1 - p0);
+            double dirLen = dir.GetLength();
+
+            if (dirLen < 0.001) return fullCurveLength;
+
+            XYZ u = dir.Normalize();
+
+            double tMin = double.MaxValue;
+            double tMax = double.MinValue;
+            int matchCount = 0;
+
+            if (boundaries != null)
+            {
+                foreach (IList<BoundarySegment> loop in boundaries)
+                {
+                    if (loop == null) continue;
+                    foreach (BoundarySegment s in loop)
+                    {
+                        if (s == null) continue;
+                        Curve sc = s.GetCurve();
+                        if (sc == null) continue;
+
+                        XYZ pt0 = sc.GetEndPoint(0);
+                        XYZ pt1 = sc.GetEndPoint(1);
+
+                        foreach (XYZ pt in new[] { pt0, pt1 })
+                        {
+                            XYZ vec = pt - p0;
+                            double t = vec.DotProduct(u);
+
+                            XYZ projPt = p0 + u * t;
+                            double perpDist = pt.DistanceTo(projPt);
+
+                            if (perpDist < 2.5) // В пределах 750 мм от прямой линии стены
+                            {
+                                if (t < tMin) tMin = t;
+                                if (t > tMax) tMax = t;
+                                matchCount++;
+                            }
+                        }
+                    }
+                }
+            }
+
+            double spaceInnerLengthFt = fullCurveLength;
+
+            if (matchCount >= 2 && tMax > tMin + 0.01)
+            {
+                tMin = Math.Max(0.0, tMin);
+                tMax = Math.Min(dirLen, tMax);
+
+                double croppedSpan = tMax - tMin;
+                if (croppedSpan > 0.01)
+                {
+                    spaceInnerLengthFt = croppedSpan;
+                }
+            }
+
+            // Припуск до осей смежных стен
+            double extraLengthFt = (tPrevFt / 2.0) + (tNextFt / 2.0);
+            double finalLengthFt = spaceInnerLengthFt + extraLengthFt;
+
+            return finalLengthFt;
         }
 
         private Element GetElementFromSegment(BoundarySegment seg)
