@@ -53,6 +53,9 @@ namespace BCCPlugIn
             _doc = doc;
         }
 
+        private Dictionary<ElementId, string> _typeCodeMap;
+        private Dictionary<string, int> _prefixCounterMap;
+
         // ───────────────────────────────────────────────────────────────────
         // Главный метод
         // ───────────────────────────────────────────────────────────────────
@@ -67,6 +70,8 @@ namespace BCCPlugIn
             bool processWindows)
         {
             int placedCount = 0;
+            _typeCodeMap = new Dictionary<ElementId, string>();
+            _prefixCounterMap = new Dictionary<string, int>();
 
             using (Transaction tx = new Transaction(_doc, "BIMBCC Теплопотери — добавление параметров"))
             {
@@ -177,7 +182,7 @@ namespace BCCPlugIn
                             double lengthMm  = 0;
                             double heightMm  = 0;
                             double areaSqM   = 0;
-                            string label     = boundElem != null ? GetConstructionLabel(boundElem, cat) : "Ограждающая конструкция";
+                            string label     = boundElem != null ? GetConstructionLabel(boundElem, cat) : "НС1";
                             string orient    = GetOrientation(boundElem, cat, seg);
 
                             if (boundElem != null)
@@ -204,10 +209,9 @@ namespace BCCPlugIn
                             SetNumber(inst, P_LENGTH,    lengthMm);
                             SetNumber(inst, P_HEIGHT,    heightMm);
                             SetNumber(inst, P_AREA,      areaSqM);
-                            // Расчётные коэффициенты — пустые (заполняются пользователем)
-                            SetNumber(inst, P_COEFF_N,   0);
+                            SetNumber(inst, P_COEFF_N,   1); // Коэффициент n по умолчанию 1
                             SetNumber(inst, P_COEFF_K,   0);
-                            SetNumber(inst, P_ADD_B1,    0);
+                            SetNumber(inst, P_ADD_B1,    GetB1OrientationAddon(orient)); // Надбавка b1 по ориентации
                             SetNumber(inst, P_ADD_B2,    0);
                             SetNumber(inst, P_ADD_B3,    0);
                             SetNumber(inst, P_ADD_B4,    0);
@@ -232,6 +236,30 @@ namespace BCCPlugIn
             }
 
             return placedCount;
+        }
+
+        private static double GetB1OrientationAddon(string orient)
+        {
+            if (string.IsNullOrEmpty(orient)) return 0.0;
+
+            switch (orient.Trim().ToUpperInvariant())
+            {
+                case "С":
+                case "СВ":
+                case "В":
+                case "СЗ":
+                    return 0.10; // +10%
+
+                case "З":
+                case "ЮВ":
+                    return 0.05; // +5%
+
+                case "Ю":
+                case "ЮЗ":
+                case "ГОРИЗОНТАЛЬНАЯ":
+                default:
+                    return 0.00;
+            }
         }
 
         private void GetSpaceRoomNumberAndName(Space space, out string roomNumber, out string roomName)
@@ -309,7 +337,7 @@ namespace BCCPlugIn
                     sched.Name = schedName;
 
                     ScheduleDefinition def = sched.Definition;
-                    def.IsItemized = true;
+                    def.IsItemized = false; // Снять галочку "Для каждого экземпляра"
 
                     // Добавить поля в порядке столбцов
                     string[] fieldOrder = new[]
@@ -322,7 +350,7 @@ namespace BCCPlugIn
                         P_COEFF_ADD, P_HEAT_LOSS
                     };
 
-                    // Собрать доступные поля (без ToDictionary во избежание выброса ошибок на дубликаты имён)
+                    // Собрать доступные поля
                     IList<SchedulableField> schedulable = def.GetSchedulableFields();
 
                     foreach (string paramName in fieldOrder)
@@ -330,26 +358,59 @@ namespace BCCPlugIn
                         SchedulableField sf = schedulable.FirstOrDefault(f => f.GetName(_doc) == paramName);
                         if (sf != null)
                         {
-                            def.AddField(sf);
+                            ScheduleField addedField = def.AddField(sf);
+                            if (paramName == P_AREA)
+                            {
+                                addedField.DisplayType = ScheduleFieldDisplayType.Totals; // Вычисление итогов по площади!
+                            }
                         }
                     }
 
-                    // Сортировка: Номер → Имя помещения
-                    ScheduleSortGroupField sortByNumber = null;
-                    ScheduleSortGroupField sortByName   = null;
+                    // Сортировка: Номер (с заголовком) → Имя помещения → Обозначение конструкции → Площадь конструкции
+                    def.ClearSortGroupFields();
 
-                    foreach (ScheduleField addedField in def.GetFieldOrder()
-                        .Select(id => def.GetField(id)))
+                    ScheduleField fieldRoomNum = null;
+                    ScheduleField fieldRoomName = null;
+                    ScheduleField fieldConstrLabel = null;
+                    ScheduleField fieldArea = null;
+
+                    foreach (ScheduleField f in def.GetFieldOrder().Select(id => def.GetField(id)))
                     {
-                        string fn = addedField.GetSchedulableField().GetName(_doc);
-                        if (fn == P_ROOM_NUMBER && sortByNumber == null)
-                            sortByNumber = new ScheduleSortGroupField(addedField.FieldId);
-                        if (fn == P_ROOM_NAME && sortByName == null)
-                            sortByName = new ScheduleSortGroupField(addedField.FieldId);
+                        string fn = f.GetSchedulableField().GetName(_doc);
+                        if (fn == P_ROOM_NUMBER) fieldRoomNum = f;
+                        else if (fn == P_ROOM_NAME) fieldRoomName = f;
+                        else if (fn == P_CONSTR_LABEL) fieldConstrLabel = f;
+                        else if (fn == P_AREA) fieldArea = f;
                     }
 
-                    if (sortByNumber != null) def.AddSortGroupField(sortByNumber);
-                    if (sortByName   != null) def.AddSortGroupField(sortByName);
+                    // 1. По номеру помещения с заголовком
+                    if (fieldRoomNum != null)
+                    {
+                        ScheduleSortGroupField sort1 = new ScheduleSortGroupField(fieldRoomNum.FieldId);
+                        sort1.ShowHeader = true; // С заголовком!
+                        def.AddSortGroupField(sort1);
+                    }
+
+                    // 2. По имени помещения
+                    if (fieldRoomName != null)
+                    {
+                        ScheduleSortGroupField sort2 = new ScheduleSortGroupField(fieldRoomName.FieldId);
+                        def.AddSortGroupField(sort2);
+                    }
+
+                    // 3. По обозначению конструкции
+                    if (fieldConstrLabel != null)
+                    {
+                        ScheduleSortGroupField sort3 = new ScheduleSortGroupField(fieldConstrLabel.FieldId);
+                        def.AddSortGroupField(sort3);
+                    }
+
+                    // 4. По площади конструкции
+                    if (fieldArea != null)
+                    {
+                        ScheduleSortGroupField sort4 = new ScheduleSortGroupField(fieldArea.FieldId);
+                        def.AddSortGroupField(sort4);
+                    }
 
                     tx.Commit();
                 }
@@ -746,24 +807,72 @@ namespace BCCPlugIn
         }
 
         /// <summary>
-        /// Метка конструкции: тип элемента + марка типа.
+        /// Метка конструкции с использованием сокращений: НС1, НС2, ВС1, ДВ1, ОК1, ПР1, ПОТ1, КР1...
         /// </summary>
         private string GetConstructionLabel(Element elem, BuiltInCategory cat)
         {
-            string typeName = "";
-            ElementType eType = _doc.GetElement(elem.GetTypeId()) as ElementType;
-            if (eType != null) typeName = eType.Name;
+            if (elem == null) return "НС1";
 
-            switch (cat)
+            ElementId typeId = elem.GetTypeId();
+            if (typeId == null || typeId == ElementId.InvalidElementId) return "НС1";
+
+            if (_typeCodeMap != null && _typeCodeMap.TryGetValue(typeId, out string existingCode))
             {
-                case BuiltInCategory.OST_Walls:                  return $"Стена: {typeName}";
-                case BuiltInCategory.OST_Floors:                 return $"Перекрытие: {typeName}";
-                case BuiltInCategory.OST_Ceilings:               return $"Потолок: {typeName}";
-                case BuiltInCategory.OST_StructuralFoundation:   return $"Плита: {typeName}";
-                case BuiltInCategory.OST_Doors:                  return $"Дверь: {typeName}";
-                case BuiltInCategory.OST_Windows:                return $"Окно: {typeName}";
-                default:                                          return typeName;
+                return existingCode;
             }
+
+            string prefix = "КН";
+
+            if (cat == BuiltInCategory.OST_Walls)
+            {
+                bool isExterior = false;
+                if (elem is Wall wall)
+                {
+                    try
+                    {
+                        if (wall.WallType != null && wall.WallType.Function == WallFunction.Exterior)
+                            isExterior = true;
+                    }
+                    catch { }
+                }
+                prefix = isExterior ? "НС" : "ВС";
+            }
+            else if (cat == BuiltInCategory.OST_Windows)
+            {
+                prefix = "ОК";
+            }
+            else if (cat == BuiltInCategory.OST_Doors)
+            {
+                prefix = "ДВ";
+            }
+            else if (cat == BuiltInCategory.OST_Floors || cat == BuiltInCategory.OST_StructuralFoundation)
+            {
+                prefix = "ПР";
+            }
+            else if (cat == BuiltInCategory.OST_Ceilings)
+            {
+                prefix = "ПОТ";
+            }
+            else if (cat == BuiltInCategory.OST_Roofs)
+            {
+                prefix = "КР";
+            }
+
+            if (_prefixCounterMap == null) _prefixCounterMap = new Dictionary<string, int>();
+            if (_typeCodeMap == null) _typeCodeMap = new Dictionary<ElementId, string>();
+
+            if (!_prefixCounterMap.ContainsKey(prefix))
+            {
+                _prefixCounterMap[prefix] = 1;
+            }
+            else
+            {
+                _prefixCounterMap[prefix]++;
+            }
+
+            string code = $"{prefix}{_prefixCounterMap[prefix]}";
+            _typeCodeMap[typeId] = code;
+            return code;
         }
 
         // ───────────────────────────────────────────────────────────────────
