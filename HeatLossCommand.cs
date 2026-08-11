@@ -112,6 +112,7 @@ namespace BCCPlugIn
                 }
 
                 // ── 5. Запустить движок ───────────────────────────────────────
+                // ── 5. Транзакция 1: Геометрический расчёт и расстановка кубиков ───
                 HeatLossEngine engine = new HeatLossEngine(doc);
 
                 int placedCount = engine.Run(
@@ -124,15 +125,36 @@ namespace BCCPlugIn
                     window.ProcessDoors,
                     window.ProcessWindows);
 
-                // ── 5. Создать / обновить спецификацию ───────────────────────
+                // ── 6. Создать / обновить спецификацию ──────────────────────────────
                 string schedError;
                 string schedName = engine.CreateOrUpdateSchedule(out schedError);
 
+                // ── 7. Диалог 2: Задание коэффициентов k и Транзакция 2 ──────────────
+                List<HeatLossCoeffItem> coeffItems = engine.GetPlacedConstructionTypes();
+                int calculatedCount = 0;
+
+                if (coeffItems.Count > 0)
+                {
+                    HeatLossCoeffWindow coeffWindow = new HeatLossCoeffWindow(coeffItems);
+                    WindowInteropHelper coeffHelper = new WindowInteropHelper(coeffWindow);
+                    coeffHelper.Owner = uiapp.MainWindowHandle;
+
+                    if (coeffWindow.ShowDialog() == true)
+                    {
+                        Dictionary<string, double> kMap = coeffWindow.Items
+                            .ToDictionary(item => item.Code, item => item.CoeffK);
+
+                        calculatedCount = engine.ApplyCoefficientsAndCalculateHeatLoss(kMap);
+                    }
+                }
+
+                // ── 8. Итоговое сообщение ───────────────────────────────────────────
                 TaskDialog td = new TaskDialog("BIMBCC | Теплопотери");
-                td.MainInstruction = "Расстановка завершена!";
+                td.MainInstruction = "Расстановка и расчёт теплопотерь завершены!";
                 td.MainContent =
                     $"Размещено кубиков:  {placedCount}\n" +
                     $"Пространств обработано:  {spaces.Count}\n" +
+                    $"Рассчитано элементов (Q):  {calculatedCount}\n" +
                     (schedName != null
                         ? $"Спецификация:  «{schedName}» создана/обновлена."
                         : $"Спецификацию создать не удалось: {schedError}");
