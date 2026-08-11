@@ -1,1035 +1,389 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Text;
 using Autodesk.Revit.DB;
-using Autodesk.Revit.DB.Mechanical;
-using Autodesk.Revit.DB.Structure;
+using Autodesk.Revit.DB.Architecture;
 
 namespace BCCPlugIn
 {
-    public class HeatLossBoundaryItem
-    {
-        // 1. Номер помещения
-        public string SpaceNumber { get; set; }
-
-        // 2. Температура наружного воздуха (°C)
-        public double OutdoorTemp { get; set; } = -23.0;
-
-        // 3. Температура помещения (°C)
-        public double IndoorTemp { get; set; } = 20.0;
-
-        // 4. Наименование помещения
-        public string SpaceName { get; set; }
-
-        // 5. Обозначение ограждающей конструкции
-        public string Designation { get; set; }
-
-        // 6. Ориентация
-        public string Orientation { get; set; } = "СЗ";
-
-        // 7. Длина ограждающей конструкции (м)
-        public double LengthMeters { get; set; }
-
-        // 8. Высота ограждающей конструкции (м)
-        public double HeightMeters { get; set; }
-
-        // 9. Площадь (м²)
-        public double AreaSqMeters { get; set; }
-
-        // 10. Коэффициент n
-        public double CoeffN { get; set; } = 1.0;
-
-        // 11. Коэффициент теплопередачи k (Вт/(м²·°C))
-        public double CoeffK { get; set; } = 1.0;
-
-        // 12. b1 - поправка на ориентацию
-        public double B1 { get; set; } = 0.1;
-
-        // 13. b2 - поправка на угол
-        public double B2 { get; set; } = 0.0;
-
-        // 14. Коэффициент надбавки (1 + b1 + b2)
-        public double CoeffAllowance => 1.0 + B1 + B2;
-
-        // 15. Теплопотери (Вт) = (t_int - t_ext) * A * n * k * (1 + b1 + b2)
-        public double HeatLossWatts => (IndoorTemp - OutdoorTemp) * AreaSqMeters * CoeffN * CoeffK * CoeffAllowance;
-
-        // Additional internal references
-        public ElementId SpaceId { get; set; }
-        public ElementId BoundingElementId { get; set; }
-        public string BoundingCategoryName { get; set; }
-    }
-
-    public class PlacedCubeInfo
-    {
-        public FamilyInstance Instance { get; set; }
-        public HeatLossBoundaryItem ItemData { get; set; }
-    }
-
-    public class HeatLossCalculationResult
-    {
-        public int SpacesProcessedCount { get; set; }
-        public int CubesPlacedCount { get; set; }
-        public int DeletedCubesCount { get; set; }
-        public ViewSchedule CreatedSchedule { get; set; }
-        public string ExportedCsvPath { get; set; }
-        public List<HeatLossBoundaryItem> ExtractedItems { get; set; } = new List<HeatLossBoundaryItem>();
-        public List<string> Logs { get; set; } = new List<string>();
-    }
-
+    /// <summary>
+    /// Основной движок модуля «Теплопотери».
+    /// Для каждого помещения находит все ограждающие конструкции,
+    /// размещает экземпляр семейства-кубика и заполняет 18 параметров.
+    /// </summary>
     public class HeatLossEngine
     {
+        // ── Имена параметров ────────────────────────────────────────────────
+        public const string P_ROOM_NUMBER       = "BCC_HL_Номер помещения";
+        public const string P_ROOM_NAME         = "BCC_HL_Имя помещения";
+        public const string P_TEMP_OUT          = "BCC_HL_Температура наружного воздуха";
+        public const string P_TEMP_IN           = "BCC_HL_Температура внутреннего воздуха";
+        public const string P_CORNER_TYPE       = "BCC_HL_Тип углового помещения";
+        public const string P_CONSTR_LABEL      = "BCC_HL_Обозначение конструкции";
+        public const string P_ORIENTATION       = "BCC_HL_Ориентация конструкции";
+        public const string P_LENGTH            = "BCC_HL_Длина конструкции";
+        public const string P_HEIGHT            = "BCC_HL_Высота конструкции";
+        public const string P_AREA              = "BCC_HL_Площадь конструкции";
+        public const string P_COEFF_N           = "BCC_HL_Коэффициент n";
+        public const string P_COEFF_K           = "BCC_HL_Коэффициент теплопередачи k";
+        public const string P_ADD_B1            = "BCC_HL_Надбавка b1";
+        public const string P_ADD_B2            = "BCC_HL_Надбавка b2";
+        public const string P_ADD_B3            = "BCC_HL_Надбавка b3";
+        public const string P_ADD_B4            = "BCC_HL_Надбавка b4";
+        public const string P_COEFF_ADD         = "BCC_HL_Коэффициент надбавки";
+        public const string P_HEAT_LOSS         = "BCC_HL_Теплопотери";
+
+        private static readonly string[] AllTextParams = new[]
+        {
+            P_ROOM_NUMBER, P_ROOM_NAME, P_CORNER_TYPE,
+            P_CONSTR_LABEL, P_ORIENTATION
+        };
+        private static readonly string[] AllNumberParams = new[]
+        {
+            P_TEMP_OUT, P_TEMP_IN, P_LENGTH, P_HEIGHT, P_AREA,
+            P_COEFF_N, P_COEFF_K, P_ADD_B1, P_ADD_B2, P_ADD_B3,
+            P_ADD_B4, P_COEFF_ADD, P_HEAT_LOSS
+        };
+
         private readonly Document _doc;
 
         public HeatLossEngine(Document doc)
         {
-            _doc = doc ?? throw new ArgumentNullException(nameof(doc));
+            _doc = doc;
         }
 
-        public List<RevitLinkInstance> GetRevitLinkInstances()
+        // ───────────────────────────────────────────────────────────────────
+        // Главный метод
+        // ───────────────────────────────────────────────────────────────────
+        public int Run(
+            List<Room> rooms,
+            FamilySymbol symbol,
+            double tempOutside,
+            double tempInside,
+            bool processWalls,
+            bool processFloors,
+            bool processDoors,
+            bool processWindows)
         {
-            return new FilteredElementCollector(_doc)
-                .OfClass(typeof(RevitLinkInstance))
-                .Cast<RevitLinkInstance>()
-                .Where(link => link.GetLinkDocument() != null)
-                .ToList();
-        }
+            int placedCount = 0;
 
-        public List<FamilySymbol> GetAvailableCubeSymbols()
-        {
-            return new FilteredElementCollector(_doc)
-                .OfClass(typeof(FamilySymbol))
-                .OfCategory(BuiltInCategory.OST_GenericModel)
-                .Cast<FamilySymbol>()
-                .OrderBy(s => s.FamilyName)
-                .ThenBy(s => s.Name)
-                .ToList();
-        }
-
-        public List<Space> GetTargetSpaces(string scopeMode, List<ElementId> selectedSpaceIds, ElementId levelId)
-        {
-            var collector = new FilteredElementCollector(_doc)
-                .OfClass(typeof(SpatialElement))
-                .OfType<Space>()
-                .Where(s => s.Area > 0);
-
-            if (scopeMode == "Selected" && selectedSpaceIds != null && selectedSpaceIds.Count > 0)
+            using (Transaction tx = new Transaction(_doc, "BIMBCC Теплопотери — добавление параметров"))
             {
-                var idSet = new HashSet<ElementId>(selectedSpaceIds);
-                return collector.Where(s => idSet.Contains(s.Id)).ToList();
+                tx.Start();
+                EnsureProjectParameters();
+                tx.Commit();
             }
 
-            if (scopeMode == "Level" && levelId != null && levelId != ElementId.InvalidElementId)
+            using (Transaction tx = new Transaction(_doc, "BIMBCC Теплопотери — расстановка кубиков"))
             {
-                return collector.Where(s => s.LevelId == levelId).ToList();
+                tx.Start();
+
+                // Активировать символ
+                if (!symbol.IsActive)
+                {
+                    symbol.Activate();
+                    _doc.Regenerate();
+                }
+
+                SpatialElementBoundaryOptions boundaryOpts = new SpatialElementBoundaryOptions
+                {
+                    SpatialElementBoundaryLocation = SpatialElementBoundaryLocation.Finish
+                };
+
+                foreach (Room room in rooms)
+                {
+                    string roomNumber = room.Number ?? "";
+                    string roomName   = room.Name   ?? "";
+                    double roomHeight = room.UnboundedHeight; // футы
+
+                    IList<IList<BoundarySegment>> boundaries =
+                        room.GetBoundarySegments(boundaryOpts);
+
+                    // Собрать уникальные элементы-ограждения
+                    HashSet<ElementId> processedIds = new HashSet<ElementId>();
+
+                    foreach (IList<BoundarySegment> loop in boundaries)
+                    {
+                        foreach (BoundarySegment seg in loop)
+                        {
+                            ElementId boundElemId = seg.ElementId;
+                            if (boundElemId == ElementId.InvalidElementId) continue;
+                            if (!processedIds.Add(boundElemId)) continue;
+
+                            Element boundElem = _doc.GetElement(boundElemId);
+                            if (boundElem == null) continue;
+
+                            // Определить тип конструкции
+                            BuiltInCategory cat = GetBuiltInCategory(boundElem);
+
+                            bool isWall    = (cat == BuiltInCategory.OST_Walls);
+                            bool isFloor   = (cat == BuiltInCategory.OST_Floors  ||
+                                              cat == BuiltInCategory.OST_Ceilings ||
+                                              cat == BuiltInCategory.OST_StructuralFoundation);
+                            bool isDoor    = (cat == BuiltInCategory.OST_Doors);
+                            bool isWindow  = (cat == BuiltInCategory.OST_Windows);
+
+                            if (isWall   && !processWalls)   continue;
+                            if (isFloor  && !processFloors)  continue;
+                            if (isDoor   && !processDoors)   continue;
+                            if (isWindow && !processWindows) continue;
+
+                            if (!isWall && !isFloor && !isDoor && !isWindow) continue;
+
+                            // Вычислить точку размещения
+                            XYZ placementPoint = GetPlacementPoint(boundElem, room, seg, roomHeight);
+                            if (placementPoint == null) continue;
+
+                            // Разместить экземпляр
+                            FamilyInstance inst = _doc.Create.NewFamilyInstance(
+                                placementPoint,
+                                symbol,
+                                Autodesk.Revit.DB.Structure.StructuralType.NonStructural);
+
+                            if (inst == null) continue;
+
+                            // Вычислить геометрические характеристики
+                            double lengthMm  = 0;
+                            double heightMm  = 0;
+                            double areaSqM   = 0;
+                            string label     = GetConstructionLabel(boundElem, cat);
+                            string orient    = GetOrientation(boundElem, cat, seg);
+
+                            GetConstructionDimensions(boundElem, cat, seg, roomHeight,
+                                out lengthMm, out heightMm, out areaSqM);
+
+                            // Заполнить параметры
+                            SetText(inst, P_ROOM_NUMBER,  roomNumber);
+                            SetText(inst, P_ROOM_NAME,    roomName);
+                            SetText(inst, P_CONSTR_LABEL, label);
+                            SetText(inst, P_ORIENTATION,  orient);
+                            SetText(inst, P_CORNER_TYPE,  "");
+
+                            SetNumber(inst, P_TEMP_OUT,  tempOutside);
+                            SetNumber(inst, P_TEMP_IN,   tempInside);
+                            SetNumber(inst, P_LENGTH,    lengthMm);
+                            SetNumber(inst, P_HEIGHT,    heightMm);
+                            SetNumber(inst, P_AREA,      areaSqM);
+                            // Расчётные коэффициенты — пустые (заполняются пользователем)
+                            SetNumber(inst, P_COEFF_N,   0);
+                            SetNumber(inst, P_COEFF_K,   0);
+                            SetNumber(inst, P_ADD_B1,    0);
+                            SetNumber(inst, P_ADD_B2,    0);
+                            SetNumber(inst, P_ADD_B3,    0);
+                            SetNumber(inst, P_ADD_B4,    0);
+                            SetNumber(inst, P_COEFF_ADD, 0);
+                            SetNumber(inst, P_HEAT_LOSS, 0);
+
+                            placedCount++;
+                        }
+                    }
+                }
+
+                tx.Commit();
             }
 
-            return collector.ToList();
+            return placedCount;
         }
 
-        // -----------------------------------------------------------------------
-        // ITERATION 1 — STEP A (call OUTSIDE any transaction)
-        // Write the shared param file, open it, collect ExternalDefinition objects.
-        // Does NOT restore SharedParametersFilename — caller must call
-        // RestoreSharedParamFilename() AFTER the transaction that calls
-        // -----------------------------------------------------------------------
-        public List<ExternalDefinition> PrepareSharedParamDefinitions(
-            out string origFilename, HeatLossCalculationResult result)
+        // ───────────────────────────────────────────────────────────────────
+        // Создание / обновление спецификации
+        // ───────────────────────────────────────────────────────────────────
+        public string CreateOrUpdateSchedule()
         {
-            origFilename = null;
-            var definitions = new List<ExternalDefinition>();
+            const string schedName = "BIMBCC Теплопотери";
 
             try
             {
-                string tempDir = Path.Combine(Path.GetTempPath(), "BIMBCC");
-                if (!Directory.Exists(tempDir)) Directory.CreateDirectory(tempDir);
-                string bimbccFilePath = Path.Combine(tempDir, "BIMBCC_HeatLoss_SharedParams.txt");
-
-                // CRITICAL: Write as UTF-8 WITHOUT BOM (= pure ASCII for our ASCII content).
-                // Encoding.Unicode (UTF-16 LE) inserts null bytes after every ASCII char,
-                // which Revit's C++ ANSI parser interprets as end-of-string => readParamDatabase error.
-                // Delete any old cached file first so Revit reads the fresh one.
-                if (File.Exists(bimbccFilePath)) File.Delete(bimbccFilePath);
-                using (var sw = new StreamWriter(bimbccFilePath, false, new System.Text.UTF8Encoding(false)))
+                using (Transaction tx = new Transaction(_doc, "BIMBCC Теплопотери — спецификация"))
                 {
-                    sw.WriteLine("# This is a Revit shared parameter file.");
-                    sw.WriteLine("# Do not edit manually.");
-                    sw.WriteLine("*META\tVERSION\tMINVER");
-                    sw.WriteLine("META\t2\t1");
-                    sw.WriteLine("*GROUP\tID\tNAME");
-                    sw.WriteLine("GROUP\t1\tBIMBCC_HeatLoss");
-                    sw.WriteLine("*PARAM\tGUID\tNAME\tDATATYPE\tDATACATEGORY\tGROUP\tVISIBLE\tDESCRIPTION\tUSERMODIFIABLE\tHIDEWHENNOVALUE");
-                    sw.WriteLine("PARAM\te1b2c3d4-0001-4000-8000-000000000001\tBIMBCC_SpaceNumber\tTEXT\t\t1\t1\tSpace number\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0002-4000-8000-000000000002\tBIMBCC_OutdoorTemp\tNUMBER\t\t1\t1\tOutdoor temperature\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0003-4000-8000-000000000003\tBIMBCC_IndoorTemp\tNUMBER\t\t1\t1\tIndoor temperature\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0004-4000-8000-000000000004\tBIMBCC_SpaceName\tTEXT\t\t1\t1\tSpace name\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0005-4000-8000-000000000005\tBIMBCC_Designation\tTEXT\t\t1\t1\tDesignation\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0006-4000-8000-000000000006\tBIMBCC_Orientation\tTEXT\t\t1\t1\tOrientation\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0007-4000-8000-000000000007\tBIMBCC_Length\tLENGTH\t\t1\t1\tLength\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0008-4000-8000-000000000008\tBIMBCC_Height\tLENGTH\t\t1\t1\tHeight\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0009-4000-8000-000000000009\tBIMBCC_Area\tAREA\t\t1\t1\tArea\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0010-4000-8000-000000000010\tBIMBCC_CoeffN\tNUMBER\t\t1\t1\tCoefficient n\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0011-4000-8000-000000000011\tBIMBCC_CoeffK\tNUMBER\t\t1\t1\tCoefficient k\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0012-4000-8000-000000000012\tBIMBCC_B1\tNUMBER\t\t1\t1\tB1 correction\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0013-4000-8000-000000000013\tBIMBCC_B2\tNUMBER\t\t1\t1\tB2 correction\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0014-4000-8000-000000000014\tBIMBCC_CoeffAllow\tNUMBER\t\t1\t1\tAllowance coefficient\t1\t0");
-                    sw.WriteLine("PARAM\te1b2c3d4-0015-4000-8000-000000000015\tBIMBCC_HeatLoss\tNUMBER\t\t1\t1\tHeat loss Q (W)\t1\t0");
+                    tx.Start();
+
+                    // Удалить старую, если есть
+                    ViewSchedule existing = new FilteredElementCollector(_doc)
+                        .OfClass(typeof(ViewSchedule))
+                        .Cast<ViewSchedule>()
+                        .FirstOrDefault(vs => vs.Name == schedName);
+                    if (existing != null)
+                        _doc.Delete(existing.Id);
+
+                    // Создать новую
+                    ViewSchedule sched = ViewSchedule.CreateSchedule(
+                        _doc,
+                        new ElementId(BuiltInCategory.OST_GenericModel));
+                    sched.Name = schedName;
+
+                    ScheduleDefinition def = sched.Definition;
+                    def.IsItemized = true;
+
+                    // Добавить поля в порядке столбцов
+                    string[] fieldOrder = new[]
+                    {
+                        P_ROOM_NUMBER, P_ROOM_NAME, P_TEMP_OUT, P_TEMP_IN,
+                        P_CORNER_TYPE, P_CONSTR_LABEL, P_ORIENTATION,
+                        P_LENGTH, P_HEIGHT, P_AREA,
+                        P_COEFF_N, P_COEFF_K,
+                        P_ADD_B1, P_ADD_B2, P_ADD_B3, P_ADD_B4,
+                        P_COEFF_ADD, P_HEAT_LOSS
+                    };
+
+                    // Собрать доступные поля
+                    IList<SchedulableField> schedulable = def.GetSchedulableFields();
+                    Dictionary<string, SchedulableField> fieldMap =
+                        schedulable.ToDictionary(f => f.GetName(_doc), f => f);
+
+                    foreach (string paramName in fieldOrder)
+                    {
+                        if (fieldMap.TryGetValue(paramName, out SchedulableField sf))
+                        {
+                            def.AddField(sf);
+                        }
+                    }
+
+                    // Сортировка: Номер → Имя помещения
+                    ScheduleSortGroupField sortByNumber = null;
+                    ScheduleSortGroupField sortByName   = null;
+
+                    foreach (ScheduleField addedField in def.GetFieldOrder()
+                        .Select(id => def.GetField(id)))
+                    {
+                        string fn = addedField.GetSchedulableField().GetName(_doc);
+                        if (fn == P_ROOM_NUMBER && sortByNumber == null)
+                            sortByNumber = new ScheduleSortGroupField(addedField.FieldId);
+                        if (fn == P_ROOM_NAME && sortByName == null)
+                            sortByName = new ScheduleSortGroupField(addedField.FieldId);
+                    }
+
+                    if (sortByNumber != null) def.AddSortGroupField(sortByNumber);
+                    if (sortByName   != null) def.AddSortGroupField(sortByName);
+
+                    tx.Commit();
                 }
 
-                // Save original filename BEFORE switching
-                try { origFilename = _doc.Application.SharedParametersFilename; } catch { }
+                return schedName;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[HeatLossEngine] CreateOrUpdateSchedule failed: {ex.Message}");
+                return null;
+            }
+        }
 
-                // Switch to BIMBCC file — NOTE: this is OUTSIDE any transaction
-                _doc.Application.SharedParametersFilename = bimbccFilePath;
+        // ───────────────────────────────────────────────────────────────────
+        // Добавление параметров проекта в категорию OST_GenericModel
+        // ───────────────────────────────────────────────────────────────────
+        private void EnsureProjectParameters()
+        {
+            CategorySet catSet = _doc.Application.Create.NewCategorySet();
+            Category genericCat = _doc.Settings.Categories.get_Item(BuiltInCategory.OST_GenericModel);
+            catSet.Insert(genericCat);
+
+            InstanceBinding instanceBinding =
+                _doc.Application.Create.NewInstanceBinding(catSet);
+
+            BindingMap bindMap = _doc.ParameterBindings;
+
+            // Текстовые параметры
+            foreach (string name in AllTextParams)
+                EnsureParam(bindMap, instanceBinding, name,
+                    SpecTypeId.String.Text, GroupTypeId.Data);
+
+            // Числовые параметры
+            foreach (string name in AllNumberParams)
+                EnsureParam(bindMap, instanceBinding, name,
+                    SpecTypeId.Number, GroupTypeId.Data);
+        }
+
+        private void EnsureParam(
+            BindingMap bindMap,
+            InstanceBinding binding,
+            string paramName,
+            ForgeTypeId specTypeId,
+            ForgeTypeId groupTypeId)
+        {
+            // Проверить, не существует ли уже
+            DefinitionBindingMapIterator it = bindMap.ForwardIterator();
+            while (it.MoveNext())
+            {
+                if (it.Key.Name == paramName) return; // уже есть
+            }
+
+            // Revit 2024: создаём параметр проекта через временный файл ФОП
+            string originalSharedParamFile = _doc.Application.SharedParametersFilename;
+            string tempFile = System.IO.Path.GetTempFileName();
+
+            try
+            {
+                // Инициализируем пустой временный файл ФОП
+                System.IO.File.WriteAllText(tempFile,
+                    "# This is a Revit shared parameter file.\r\n" +
+                    "# Do not edit manually.\r\n" +
+                    "*META\tVERSION\tMINVERSION\r\n" +
+                    "META\t2\t1\r\n" +
+                    "*GROUP\tID\tNAME\r\n" +
+                    "GROUP\t1\tBIMBCC\r\n" +
+                    "*PARAM\tGUID\tNAME\tDATATYPE\tDATACATEGORY\tGROUP\tVISIBLE\tDESCRIPTION\tUSERMODIFIABLE\tHIDEWHENNOVALUE\r\n");
+
+                _doc.Application.SharedParametersFilename = tempFile;
                 DefinitionFile defFile = _doc.Application.OpenSharedParameterFile();
 
-                if (defFile == null)
-                {
-                    result?.Logs.Add("Итерация 1 (подготовка): OpenSharedParameterFile вернул null.");
-                    return definitions;
-                }
+                // Создаём группу и определение
+                DefinitionGroup grp = defFile.Groups.get_Item("BIMBCC")
+                                   ?? defFile.Groups.Create("BIMBCC");
 
-                DefinitionGroup group = defFile.Groups.get_Item("BIMBCC_HeatLoss")
-                                     ?? defFile.Groups.Create("BIMBCC_HeatLoss");
-
-                // Build ExternalDefinition list — FILE IS STILL OPEN, filename unchanged
-                // ASCII names only — match exactly what's in the file above
-                var paramsToEnsure = new (string name, ForgeTypeId forgeType)[]
-                {
-                    ("BIMBCC_SpaceNumber",  SpecTypeId.String.Text),
-                    ("BIMBCC_OutdoorTemp",  SpecTypeId.Number),
-                    ("BIMBCC_IndoorTemp",   SpecTypeId.Number),
-                    ("BIMBCC_SpaceName",    SpecTypeId.String.Text),
-                    ("BIMBCC_Designation",  SpecTypeId.String.Text),
-                    ("BIMBCC_Orientation",  SpecTypeId.String.Text),
-                    ("BIMBCC_Length",       SpecTypeId.Length),
-                    ("BIMBCC_Height",       SpecTypeId.Length),
-                    ("BIMBCC_Area",         SpecTypeId.Area),
-                    ("BIMBCC_CoeffN",       SpecTypeId.Number),
-                    ("BIMBCC_CoeffK",       SpecTypeId.Number),
-                    ("BIMBCC_B1",           SpecTypeId.Number),
-                    ("BIMBCC_B2",           SpecTypeId.Number),
-                    ("BIMBCC_CoeffAllow",   SpecTypeId.Number),
-                    ("BIMBCC_HeatLoss",     SpecTypeId.Number)
-                };
-
-                foreach (var item in paramsToEnsure)
-                {
-                    Definition def = group.Definitions.get_Item(item.name);
-                    if (def == null)
+                ExternalDefinitionCreationOptions extOpts =
+                    new ExternalDefinitionCreationOptions(paramName, specTypeId)
                     {
-                        try
-                        {
-                            def = group.Definitions.Create(
-                                new ExternalDefinitionCreationOptions(item.name, item.forgeType)
-                                { UserModifiable = true, Visible = true });
-                        }
-                        catch { }
-                    }
-                    if (def is ExternalDefinition extDef) definitions.Add(extDef);
-                }
+                        UserModifiable = true
+                    };
 
-                result?.Logs.Add($"Итерация 1 (подготовка): definitions готово: {definitions.Count}/15.");
+                ExternalDefinition extDef = grp.Definitions.Create(extOpts) as ExternalDefinition;
+                if (extDef == null) return;
+
+                bindMap.Insert(extDef, binding, groupTypeId);
             }
-            catch (Exception ex)
+            finally
             {
-                result?.Logs.Add($"Итерация 1 (подготовка): {ex.Message}");
-                // Restore on error
+                // Восстанавливаем исходный файл ФОП
                 try
                 {
-                    if (!string.IsNullOrEmpty(origFilename) && File.Exists(origFilename))
-                        _doc.Application.SharedParametersFilename = origFilename;
+                    _doc.Application.SharedParametersFilename =
+                        string.IsNullOrEmpty(originalSharedParamFile) ? "" : originalSharedParamFile;
                 }
                 catch { }
-                origFilename = null; // signal to caller that restore already done
-            }
 
-            return definitions;
-        }
-
-        // -----------------------------------------------------------------------
-        // ITERATION 1 — STEP B (call INSIDE Transaction 1)
-        // Bind each ExternalDefinition to OST_GenericModel.
-        // -----------------------------------------------------------------------
-        public void InsertParameterBindings(
-            List<ExternalDefinition> definitions, HeatLossCalculationResult result)
-        {
-            if (definitions == null || definitions.Count == 0)
-            {
-                result?.Logs.Add("Итерация 1 (привязка): список definitions пуст, пропускаем.");
-                return;
-            }
-
-            try
-            {
-                Category genModelCat = _doc.Settings.Categories.get_Item(BuiltInCategory.OST_GenericModel);
-                if (genModelCat == null)
-                {
-                    result?.Logs.Add("Итерация 1 (привязка): категория OST_GenericModel не найдена.");
-                    return;
-                }
-
-                CategorySet catSet = _doc.Application.Create.NewCategorySet();
-                catSet.Insert(genModelCat);
-                InstanceBinding binding = _doc.Application.Create.NewInstanceBinding(catSet);
-
-                int boundCount = 0, alreadyCount = 0;
-                foreach (ExternalDefinition def in definitions)
-                {
-                    bool alreadyBound = false;
-                    var it = _doc.ParameterBindings.ForwardIterator();
-                    while (it.MoveNext())
-                    {
-                        if (it.Key is Definition existingKey && existingKey.Name == def.Name)
-                        {
-                            alreadyBound = true;
-                            if (it.Current is ElementBinding existingBnd
-                                && !existingBnd.Categories.Contains(genModelCat))
-                            {
-                                existingBnd.Categories.Insert(genModelCat);
-                                _doc.ParameterBindings.ReInsert(def, existingBnd, BuiltInParameterGroup.PG_DATA);
-                            }
-                            alreadyCount++;
-                            break;
-                        }
-                    }
-
-                    if (!alreadyBound)
-                    {
-                        bool ok = _doc.ParameterBindings.Insert(def, binding, BuiltInParameterGroup.PG_DATA);
-                        if (!ok) ok = _doc.ParameterBindings.ReInsert(def, binding, BuiltInParameterGroup.PG_DATA);
-                        if (ok) boundCount++;
-                        else result?.Logs.Add($"  Не удалось привязать: {def.Name}");
-                    }
-                }
-
-                result?.Logs.Add(
-                    $"Итерация 1 (привязка): добавлено {boundCount}, уже было {alreadyCount}.");
-                _doc.Regenerate();
-            }
-            catch (Exception ex)
-            {
-                result?.Logs.Add($"Итерация 1 (привязка): {ex.Message}");
+                try { System.IO.File.Delete(tempFile); } catch { }
             }
         }
 
-        // -----------------------------------------------------------------------
-        // ITERATION 1 — STEP C (call AFTER Transaction 1 commits)
-        // Restore the original SharedParametersFilename.
-        // -----------------------------------------------------------------------
-        public void RestoreSharedParamFilename(string origFilename)
-        {
-            if (string.IsNullOrEmpty(origFilename)) return;
-            try
-            {
-                if (File.Exists(origFilename))
-                    _doc.Application.SharedParametersFilename = origFilename;
-            }
-            catch { }
-        }
-
-        // ITERATION 2: PLACE CUBES IN SPACES (TRANSACTION 2)
-        public List<PlacedCubeInfo> PlaceCubeMarkers(
-            List<Space> spaces,
-            FamilySymbol cubeSymbol,
-            RevitLinkInstance selectedLinkInstance,
-            string linkedParamName,
-            double outdoorTemp,
-            bool deleteExistingCubes,
-            HeatLossCalculationResult result,
-            Action<string, double> progressCallback)
-        {
-            List<PlacedCubeInfo> placedList = new List<PlacedCubeInfo>();
-
-            if (spaces == null || spaces.Count == 0 || cubeSymbol == null)
-            {
-                return placedList;
-            }
-
-            if (!cubeSymbol.IsActive)
-            {
-                cubeSymbol.Activate();
-                _doc.Regenerate();
-            }
-
-            if (deleteExistingCubes)
-            {
-                var existingCubes = new FilteredElementCollector(_doc)
-                    .OfClass(typeof(FamilyInstance))
-                    .OfCategory(BuiltInCategory.OST_GenericModel)
-                    .Cast<FamilyInstance>()
-                    .Where(fi => fi.Symbol.Id == cubeSymbol.Id)
-                    .Select(fi => fi.Id)
-                    .ToList();
-
-                if (existingCubes.Count > 0)
-                {
-                    _doc.Delete(existingCubes);
-                    result.DeletedCubesCount = existingCubes.Count;
-                    result.Logs.Add($"Итерация 2: Удалено ранее расставленных кубиков: {existingCubes.Count}.");
-                }
-            }
-
-            SpatialElementGeometryCalculator calculator = new SpatialElementGeometryCalculator(_doc);
-            int totalSpaces = spaces.Count;
-
-            for (int i = 0; i < totalSpaces; i++)
-            {
-                var space = spaces[i];
-                double pct = ((double)(i + 1) / totalSpaces) * 100.0;
-                progressCallback?.Invoke($"Итерация 2: Анализ помещения {i + 1}/{totalSpaces}: {space.Name}...", pct);
-
-                List<HeatLossBoundaryItem> items = ExtractBoundaryItemsForSpace(space, calculator, selectedLinkInstance, linkedParamName, outdoorTemp);
-
-                if (items.Count == 0) continue;
-
-                result.SpacesProcessedCount++;
-                result.ExtractedItems.AddRange(items);
-
-                XYZ spaceCenter = GetSpaceCentroid(space);
-                Level spaceLevel = _doc.GetElement(space.LevelId) as Level;
-
-                int cubeIndex = 0;
-                int cols = (int)Math.Ceiling(Math.Sqrt(items.Count));
-
-                foreach (var item in items)
-                {
-                    int row = cubeIndex / cols;
-                    int col = cubeIndex % cols;
-
-                    double offsetX = (col - (cols - 1) / 2.0) * 1.5;
-                    double offsetY = (row - (items.Count / cols) / 2.0) * 1.5;
-
-                    XYZ cubePos = spaceCenter + new XYZ(offsetX, offsetY, 0);
-
-                    FamilyInstance instance = _doc.Create.NewFamilyInstance(
-                        cubePos,
-                        cubeSymbol,
-                        StructuralType.NonStructural);
-
-                    if (instance != null)
-                    {
-                        result.CubesPlacedCount++;
-
-                        if (spaceLevel != null)
-                        {
-                            Parameter pLevel = instance.get_Parameter(BuiltInParameter.FAMILY_LEVEL_PARAM)
-                                           ?? instance.get_Parameter(BuiltInParameter.SCHEDULE_LEVEL_PARAM);
-                            if (pLevel != null && !pLevel.IsReadOnly)
-                            {
-                                pLevel.Set(spaceLevel.Id);
-                            }
-                        }
-
-                        placedList.Add(new PlacedCubeInfo { Instance = instance, ItemData = item });
-                    }
-
-                    cubeIndex++;
-                }
-            }
-
-            result.Logs.Add($"Итерация 2 (Расстановка): Расставлено кубиков по пространствам: {result.CubesPlacedCount}.");
-            _doc.Regenerate();
-            return placedList;
-        }
-
-        // ITERATION 3: OVERWRITE PARAMETERS ON CUBES & CREATE SCHEDULE (TRANSACTION 3)
-        public void WriteParametersToCubesAndCreateSchedule(
-            List<PlacedCubeInfo> placedCubes,
-            string targetDesignationParamName,
-            string targetAreaParamName,
-            bool createSchedule,
-            bool exportCsv,
-            string csvExportPath,
-            HeatLossCalculationResult result,
-            Action<string, double> progressCallback)
-        {
-            if (placedCubes != null && placedCubes.Count > 0)
-            {
-                int totalCubes = placedCubes.Count;
-                for (int i = 0; i < totalCubes; i++)
-                {
-                    var cubeInfo = placedCubes[i];
-                    double pct = ((double)(i + 1) / totalCubes) * 50.0;
-                    progressCallback?.Invoke($"Итерация 3: Перезапись параметров кубика {i + 1}/{totalCubes}...", pct);
-
-                    WriteAllParametersToCube(cubeInfo.Instance, cubeInfo.ItemData, targetDesignationParamName, targetAreaParamName);
-                }
-                result.Logs.Add($"Итерация 3 (Запись): Перезаписаны параметры в {placedCubes.Count} кубиках.");
-            }
-
-            if (createSchedule)
-            {
-                progressCallback?.Invoke("Итерация 3: Формирование спецификации Revit...", 75.0);
-                result.CreatedSchedule = CreateOrUpdateRevitSchedule(targetDesignationParamName, targetAreaParamName, result);
-                if (result.CreatedSchedule != null)
-                {
-                    result.Logs.Add($"Сформирована спецификация в Revit: '{result.CreatedSchedule.Name}'.");
-                }
-            }
-
-            if (exportCsv && !string.IsNullOrWhiteSpace(csvExportPath))
-            {
-                progressCallback?.Invoke("Итерация 3: Экспорт отчёта CSV/Excel...", 90.0);
-                string exportedPath = ExportToCsvReport(result.ExtractedItems, csvExportPath);
-                if (!string.IsNullOrEmpty(exportedPath))
-                {
-                    result.ExportedCsvPath = exportedPath;
-                    result.Logs.Add($"Отчёт сохранен в файл: {exportedPath}");
-                }
-            }
-
-            progressCallback?.Invoke("Готово!", 100.0);
-        }
-
-        private List<HeatLossBoundaryItem> ExtractBoundaryItemsForSpace(
-            Space space,
-            SpatialElementGeometryCalculator calculator,
-            RevitLinkInstance targetLinkInstance,
-            string linkedParamName,
-            double outdoorTemp)
-        {
-            var boundaryItems = new List<HeatLossBoundaryItem>();
-
-            double spaceHeightFt = space.UnboundedHeight > 0 ? space.UnboundedHeight : 9.84252;
-            double spaceHeightMeters = UnitUtils.ConvertFromInternalUnits(spaceHeightFt, UnitTypeId.Meters);
-
-            try
-            {
-                SpatialElementGeometryResults geomResults = calculator.CalculateSpatialElementGeometry(space);
-                Solid spaceSolid = geomResults.GetGeometry();
-
-                if (spaceSolid == null || spaceSolid.Faces.Size == 0) return boundaryItems;
-
-                foreach (Face face in spaceSolid.Faces)
-                {
-                    IList<SpatialElementBoundarySubface> subfaces = geomResults.GetBoundaryFaceInfo(face);
-                    if (subfaces == null) continue;
-
-                    foreach (SpatialElementBoundarySubface subface in subfaces)
-                    {
-                        Face subfaceGeom = subface.GetSubface();
-                        if (subfaceGeom == null) continue;
-
-                        double areaSqFt = subfaceGeom.Area;
-                        double areaSqM = UnitUtils.ConvertFromInternalUnits(areaSqFt, UnitTypeId.SquareMeters);
-                        if (areaSqM < 0.001) continue;
-
-                        LinkElementId boundingElementId = subface.SpatialBoundaryElement;
-                        if (boundingElementId == null) continue;
-
-                        Element boundingElement = null;
-                        Document linkDoc = null;
-
-                        if (boundingElementId.LinkInstanceId != ElementId.InvalidElementId)
-                        {
-                            if (targetLinkInstance != null && boundingElementId.LinkInstanceId != targetLinkInstance.Id)
-                            {
-                                continue;
-                            }
-
-                            RevitLinkInstance linkInst = _doc.GetElement(boundingElementId.LinkInstanceId) as RevitLinkInstance;
-                            linkDoc = linkInst?.GetLinkDocument();
-                            if (linkDoc != null)
-                            {
-                                boundingElement = linkDoc.GetElement(boundingElementId.LinkedElementId);
-                            }
-                        }
-                        else if (boundingElementId.HostElementId != ElementId.InvalidElementId)
-                        {
-                            boundingElement = _doc.GetElement(boundingElementId.HostElementId);
-                            linkDoc = _doc;
-                        }
-
-                        if (boundingElement == null) continue;
-
-                        string wallDesignation = GetElementDesignation(boundingElement, linkedParamName);
-                        if (string.IsNullOrWhiteSpace(wallDesignation))
-                        {
-                            wallDesignation = boundingElement.Name ?? boundingElement.Category?.Name ?? "Ограждающая конструкция";
-                        }
-
-                        double insertsTotalAreaSqM = 0.0;
-
-                        if (boundingElement is Wall wall && linkDoc != null)
-                        {
-                            IList<ElementId> insertIds = wall.FindInserts(true, false, false, false);
-                            foreach (ElementId insertId in insertIds)
-                            {
-                                Element insertElem = linkDoc.GetElement(insertId);
-                                if (insertElem == null) continue;
-
-                                string insertDesignation = GetElementDesignation(insertElem, linkedParamName);
-                                if (string.IsNullOrWhiteSpace(insertDesignation))
-                                {
-                                    insertDesignation = insertElem.Name ?? insertElem.Category?.Name ?? "Окно/Дверь";
-                                }
-
-                                (double insertWidthM, double insertHeightM, double insertAreaSqM) = GetInsertDimensions(insertElem);
-                                if (insertAreaSqM > 0.001)
-                                {
-                                    insertsTotalAreaSqM += insertAreaSqM;
-                                    double kVal = GetThermalTransmittanceK(insertElem);
-
-                                    boundaryItems.Add(new HeatLossBoundaryItem
-                                    {
-                                        SpaceId = space.Id,
-                                        SpaceNumber = space.Number ?? "",
-                                        SpaceName = space.Name ?? "",
-                                        OutdoorTemp = outdoorTemp,
-                                        IndoorTemp = 20.0,
-                                        Designation = insertDesignation,
-                                        Orientation = "СЗ",
-                                        LengthMeters = insertWidthM,
-                                        HeightMeters = insertHeightM,
-                                        AreaSqMeters = insertAreaSqM,
-                                        CoeffN = 1.0,
-                                        CoeffK = kVal,
-                                        B1 = 0.1,
-                                        B2 = 0.0,
-                                        BoundingElementId = insertElem.Id,
-                                        BoundingCategoryName = insertElem.Category?.Name ?? "Элемент"
-                                    });
-                                }
-                            }
-                        }
-
-                        double netAreaSqM = Math.Max(0.0, areaSqM - insertsTotalAreaSqM);
-                        if (netAreaSqM > 0.001)
-                        {
-                            double heightM = spaceHeightMeters;
-                            double lengthM = heightM > 0 ? netAreaSqM / heightM : Math.Sqrt(netAreaSqM);
-                            double kVal = GetThermalTransmittanceK(boundingElement);
-
-                            boundaryItems.Add(new HeatLossBoundaryItem
-                            {
-                                SpaceId = space.Id,
-                                SpaceNumber = space.Number ?? "",
-                                SpaceName = space.Name ?? "",
-                                OutdoorTemp = outdoorTemp,
-                                IndoorTemp = 20.0,
-                                Designation = wallDesignation,
-                                Orientation = "СЗ",
-                                LengthMeters = lengthM,
-                                HeightMeters = heightM,
-                                AreaSqMeters = netAreaSqM,
-                                CoeffN = 1.0,
-                                CoeffK = kVal,
-                                B1 = 0.1,
-                                B2 = 0.0,
-                                BoundingElementId = boundingElement.Id,
-                                BoundingCategoryName = boundingElement.Category?.Name ?? "Элемент"
-                            });
-                        }
-                    }
-                }
-            }
-            catch
-            {
-                // Ignore individual space geometry errors
-            }
-
-            return boundaryItems;
-        }
-
-        private (double widthM, double heightM, double areaSqM) GetInsertDimensions(Element insertElem)
-        {
-            double widthFt = GetParamDoubleValue(insertElem, "Ширина", "Width", "ADSK_Размер_Ширина");
-            double heightFt = GetParamDoubleValue(insertElem, "Высота", "Height", "ADSK_Размер_Высота");
-
-            if (widthFt > 0 && heightFt > 0)
-            {
-                double widthM = UnitUtils.ConvertFromInternalUnits(widthFt, UnitTypeId.Meters);
-                double heightM = UnitUtils.ConvertFromInternalUnits(heightFt, UnitTypeId.Meters);
-                double areaSqM = widthM * heightM;
-                return (widthM, heightM, areaSqM);
-            }
-
-            BoundingBoxXYZ bbox = insertElem.get_BoundingBox(null);
-            if (bbox != null)
-            {
-                double dx = Math.Abs(bbox.Max.X - bbox.Min.X);
-                double dy = Math.Abs(bbox.Max.Y - bbox.Min.Y);
-                double dz = Math.Abs(bbox.Max.Z - bbox.Min.Z);
-                double spanFt = Math.Max(dx, dy);
-                double widthM = UnitUtils.ConvertFromInternalUnits(spanFt, UnitTypeId.Meters);
-                double heightM = UnitUtils.ConvertFromInternalUnits(dz, UnitTypeId.Meters);
-                double areaSqM = widthM * heightM;
-                return (widthM, heightM, areaSqM);
-            }
-
-            return (0.0, 0.0, 0.0);
-        }
-
-        private double GetThermalTransmittanceK(Element element)
-        {
-            double rVal = GetParamDoubleValue(element,
-                "ADSK_Сопротивление_теплопередаче",
-                "Сопротивление_теплопередаче",
-                "R_сопротивление",
-                "R");
-
-            if (rVal > 0.0001)
-            {
-                return 1.0 / rVal;
-            }
-
-            double kVal = GetParamDoubleValue(element,
-                "ADSK_Коэффициент_теплопередачи",
-                "Коэффициент_теплопередачи",
-                "k",
-                "U-Value",
-                "U_Value");
-
-            if (kVal > 0.0001)
-            {
-                return kVal;
-            }
-
-            return 1.0;
-        }
-
-        private double GetParamDoubleValue(Element element, params string[] paramNames)
-        {
-            if (element == null) return 0.0;
-
-            foreach (string name in paramNames)
-            {
-                Parameter p = element.LookupParameter(name);
-                if (p != null && p.HasValue && p.StorageType == StorageType.Double)
-                {
-                    return p.AsDouble();
-                }
-
-                ElementId typeId = element.GetTypeId();
-                if (typeId != null && typeId != ElementId.InvalidElementId)
-                {
-                    Element typeElem = element.Document.GetElement(typeId);
-                    if (typeElem != null)
-                    {
-                        Parameter tp = typeElem.LookupParameter(name);
-                        if (tp != null && tp.HasValue && tp.StorageType == StorageType.Double)
-                        {
-                            return tp.AsDouble();
-                        }
-                    }
-                }
-            }
-
-            return 0.0;
-        }
-
-        private string GetElementDesignation(Element element, string paramName)
-        {
-            if (element == null) return null;
-
-            string[] candidates = new string[]
-            {
-                paramName,
-                "ADSK_Обозначение",
-                "BIMBCC_Обозначение",
-                "ADSK_Марка",
-                "Обозначение"
-            };
-
-            foreach (string candidate in candidates)
-            {
-                if (string.IsNullOrWhiteSpace(candidate)) continue;
-
-                Parameter param = element.LookupParameter(candidate);
-                if (param != null && param.HasValue)
-                {
-                    string val = param.AsString();
-                    if (string.IsNullOrWhiteSpace(val)) val = param.AsValueString();
-                    if (!string.IsNullOrWhiteSpace(val)) return val;
-                }
-
-                ElementId typeId = element.GetTypeId();
-                if (typeId != null && typeId != ElementId.InvalidElementId)
-                {
-                    Element typeElem = element.Document.GetElement(typeId);
-                    if (typeElem != null)
-                    {
-                        Parameter typeParam = typeElem.LookupParameter(candidate);
-                        if (typeParam != null && typeParam.HasValue)
-                        {
-                            string val = typeParam.AsString();
-                            if (string.IsNullOrWhiteSpace(val)) val = typeParam.AsValueString();
-                            if (!string.IsNullOrWhiteSpace(val)) return val;
-                        }
-                    }
-                }
-            }
-
-            return null;
-        }
-
-        private void WriteAllParametersToCube(FamilyInstance cube, HeatLossBoundaryItem item, string userDesignationParam, string userAreaParam)
-        {
-            if (cube == null || item == null) return;
-
-            // 1. Space number
-            SetCubeParamValue(cube, item.SpaceNumber, "BIMBCC_SpaceNumber", "ADSK_Номер помещения", "Номер");
-
-            // 2. Outdoor temperature
-            SetCubeParamValue(cube, item.OutdoorTemp, "BIMBCC_OutdoorTemp", "t_ext");
-
-            // 3. Indoor temperature
-            SetCubeParamValue(cube, item.IndoorTemp, "BIMBCC_IndoorTemp", "t_int");
-
-            // 4. Space name
-            SetCubeParamValue(cube, item.SpaceName, "BIMBCC_SpaceName", "ADSK_Имя помещения", "ADSK_Имя пространства", "Наименование");
-
-            // 5. Designation
-            SetCubeParamValue(cube, item.Designation, userDesignationParam, "BIMBCC_Designation", "ADSK_Обозначение", "Обозначение");
-
-            // 6. Orientation
-            SetCubeParamValue(cube, item.Orientation, "BIMBCC_Orientation", "Ориентация");
-
-            // 7. Length
-            SetCubeParamValue(cube, item.LengthMeters, "BIMBCC_Length", "Длина");
-
-            // 8. Height
-            SetCubeParamValue(cube, item.HeightMeters, "BIMBCC_Height", "Высота");
-
-            // 9. Area
-            SetCubeParamValue(cube, item.AreaSqMeters, userAreaParam, "BIMBCC_Area", "ADSK_Площадь", "Площадь");
-
-            // 10. Coefficient n
-            SetCubeParamValue(cube, item.CoeffN, "BIMBCC_CoeffN", "n");
-
-            // 11. Coefficient k (heat transfer)
-            SetCubeParamValue(cube, item.CoeffK, "BIMBCC_CoeffK", "k");
-
-            // 12. b1
-            SetCubeParamValue(cube, item.B1, "BIMBCC_B1", "b1");
-
-            // 13. b2
-            SetCubeParamValue(cube, item.B2, "BIMBCC_B2", "b2");
-
-            // 14. Allowance coefficient
-            SetCubeParamValue(cube, item.CoeffAllowance, "BIMBCC_CoeffAllow", "Надбавка");
-
-            // 15. Heat loss (W)
-            SetCubeParamValue(cube, item.HeatLossWatts, "BIMBCC_HeatLoss", "Q");
-        }
-
-        private void SetCubeParamValue(FamilyInstance cube, string strValue, params string[] paramNames)
-        {
-            foreach (string name in paramNames)
-            {
-                if (string.IsNullOrWhiteSpace(name)) continue;
-                Parameter p = cube.LookupParameter(name);
-                if (p != null && !p.IsReadOnly && p.StorageType == StorageType.String)
-                {
-                    p.Set(strValue ?? "");
-                    return;
-                }
-            }
-        }
-
-        private void SetCubeParamValue(FamilyInstance cube, double doubleValue, params string[] paramNames)
-        {
-            foreach (string name in paramNames)
-            {
-                if (string.IsNullOrWhiteSpace(name)) continue;
-                Parameter p = cube.LookupParameter(name);
-                if (p != null && !p.IsReadOnly)
-                {
-                    if (p.StorageType == StorageType.Double)
-                    {
-                        // Detect unit type by parameter spec or name
-                        bool isArea   = name == "BIMBCC_Area"   || name.Contains("Площадь");
-                        bool isLength = name == "BIMBCC_Length" || name == "BIMBCC_Height"
-                                     || name.Contains("Длина")  || name.Contains("Высота");
-                        if (isArea)
-                            p.Set(UnitUtils.ConvertToInternalUnits(doubleValue, UnitTypeId.SquareMeters));
-                        else if (isLength)
-                            p.Set(UnitUtils.ConvertToInternalUnits(doubleValue, UnitTypeId.Meters));
-                        else
-                            p.Set(doubleValue);
-                        return;
-                    }
-                    else if (p.StorageType == StorageType.String)
-                    {
-                        p.Set(doubleValue.ToString("F2"));
-                        return;
-                    }
-                }
-            }
-        }
-
-        private ViewSchedule CreateOrUpdateRevitSchedule(string targetDesignationParamName, string targetAreaParamName, HeatLossCalculationResult result)
+        // ───────────────────────────────────────────────────────────────────
+        // Вспомогательные: геометрия
+        // ───────────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Точка размещения кубика — центр грани ограждения.
+        /// </summary>
+        private XYZ GetPlacementPoint(
+            Element elem, Room room, BoundarySegment seg, double roomHeightFt)
         {
             try
             {
-                string scheduleName = "Спецификация ограждающих конструкций (Теплопотери)";
-
-                ViewSchedule schedule = new FilteredElementCollector(_doc)
-                    .OfClass(typeof(ViewSchedule))
-                    .Cast<ViewSchedule>()
-                    .FirstOrDefault(s => s.Name.Equals(scheduleName, StringComparison.OrdinalIgnoreCase));
-
-                if (schedule == null)
+                BoundingBoxXYZ bb = elem.get_BoundingBox(null);
+                if (bb == null)
                 {
-                    schedule = ViewSchedule.CreateSchedule(_doc, new ElementId(BuiltInCategory.OST_GenericModel));
-                    schedule.Name = scheduleName;
+                    // Fallback: середина сегмента на половине высоты помещения
+                    Curve c = seg.GetCurve();
+                    XYZ mid = c.Evaluate(0.5, true);
+                    double roomZ = room.Level != null
+                        ? room.Level.ProjectElevation
+                        : mid.Z;
+                    return new XYZ(mid.X, mid.Y, roomZ + roomHeightFt / 2.0);
                 }
 
-                ScheduleDefinition definition = schedule.Definition;
-
-                // Clear existing fields from schedule definition
-                int existingFieldCount = definition.GetFieldCount();
-                for (int f = existingFieldCount - 1; f >= 0; f--)
-                {
-                    try
-                    {
-                        definition.RemoveField(definition.GetField(f).FieldId);
-                    }
-                    catch { }
-                }
-
-                definition.ClearSortGroupFields();
-
-                var schedulableFields = definition.GetSchedulableFields();
-
-                // ASCII param names → Russian column headers set via ColumnHeading
-                var columns = new (string[] candidates, string header)[]
-                {
-                    (new[]{ "BIMBCC_SpaceNumber",  "ADSK_Номер помещения",   "Номер помещения" },  "Номер\nпомещения"),
-                    (new[]{ "BIMBCC_OutdoorTemp" },                                                 "Тнар (°C)"),
-                    (new[]{ "BIMBCC_IndoorTemp" },                                                  "Тпом (°C)"),
-                    (new[]{ "BIMBCC_SpaceName",    "ADSK_Имя помещения",     "Имя пространства" }, "Наименование"),
-                    (new[]{ targetDesignationParamName, "BIMBCC_Designation", "ADSK_Обозначение" }, "Обозначение"),
-                    (new[]{ "BIMBCC_Orientation",  "Ориентация" },                                  "Ориентация"),
-                    (new[]{ "BIMBCC_Length",        "Длина" },                                      "Длина (м)"),
-                    (new[]{ "BIMBCC_Height",        "Высота" },                                     "Высота (м)"),
-                    (new[]{ targetAreaParamName,    "BIMBCC_Area",            "Площадь" },           "Площадь (м²)"),
-                    (new[]{ "BIMBCC_CoeffN" },                                                      "n"),
-                    (new[]{ "BIMBCC_CoeffK" },                                                      "k (Вт/м²°C)"),
-                    (new[]{ "BIMBCC_B1" },                                                          "b1"),
-                    (new[]{ "BIMBCC_B2" },                                                          "b2"),
-                    (new[]{ "BIMBCC_CoeffAllow" },                                                  "(1+b1+b2)"),
-                    (new[]{ "BIMBCC_HeatLoss",      "Теплопотери" },                               "Q (Вт)")
-                };
-
-                ScheduleField fieldSpaceNumber = null;
-                ScheduleField fieldSpaceName   = null;
-                ScheduleField fieldDesignation = null;
-                int addedFieldsCount = 0;
-
-                for (int c = 0; c < columns.Length; c++)
-                {
-                    var candidates = columns[c].candidates;
-                    string header = columns[c].header;
-                    SchedulableField matchedSf = null;
-
-                    foreach (var sf in schedulableFields)
-                    {
-                        string sfName = sf.GetName(_doc).Trim();
-                        if (candidates.Any(cand => !string.IsNullOrEmpty(cand) && sfName.Equals(cand, StringComparison.OrdinalIgnoreCase)))
-                        {
-                            matchedSf = sf;
-                            break;
-                        }
-
-                        if (sf.ParameterId != ElementId.InvalidElementId)
-                        {
-                            Element elem = _doc.GetElement(sf.ParameterId);
-                            if (elem != null && candidates.Any(cand => !string.IsNullOrEmpty(cand) && elem.Name.Equals(cand, StringComparison.OrdinalIgnoreCase)))
-                            {
-                                matchedSf = sf;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (matchedSf != null)
-                    {
-                        ScheduleField field = definition.AddField(matchedSf);
-                        try { field.ColumnHeading = header; } catch { }
-                        addedFieldsCount++;
-
-                        if (c == 0) fieldSpaceNumber = field;
-                        if (c == 3) fieldSpaceName   = field;
-                        if (c == 4) fieldDesignation = field;
-
-                        if (c == 8 || c == 14) // Area or HeatLoss
-                            field.DisplayType = ScheduleFieldDisplayType.Totals;
-                    }
-                    else
-                    {
-                        result?.Logs.Add($"Столбец #{c + 1} ({candidates[0]}): не найден в доступных полях.");
-                    }
-                }
-
-                result?.Logs.Add($"В спецификацию добавлено полей: {addedFieldsCount} из 15.");
-
-                if (fieldSpaceNumber != null)
-                {
-                    ScheduleSortGroupField sortNumber = new ScheduleSortGroupField(fieldSpaceNumber.FieldId);
-                    sortNumber.ShowHeader = true;
-                    sortNumber.ShowBlankLine = true;
-                    definition.AddSortGroupField(sortNumber);
-                }
-
-                if (fieldSpaceName != null)
-                {
-                    ScheduleSortGroupField sortName = new ScheduleSortGroupField(fieldSpaceName.FieldId);
-                    sortName.ShowHeader = false;
-                    definition.AddSortGroupField(sortName);
-                }
-
-                if (fieldDesignation != null)
-                {
-                    ScheduleSortGroupField sortDesig = new ScheduleSortGroupField(fieldDesignation.FieldId);
-                    definition.AddSortGroupField(sortDesig);
-                }
-
-                return schedule;
-            }
-            catch (Exception ex)
-            {
-                result?.Logs.Add($"Ошибка формирования спецификации: {ex.Message}");
-                return null;
-            }
-        }
-
-        private string ExportToCsvReport(List<HeatLossBoundaryItem> items, string csvFilePath)
-        {
-            try
-            {
-                string dir = Path.GetDirectoryName(csvFilePath);
-                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-
-                StringBuilder sb = new StringBuilder();
-                sb.AppendLine("1. Номер помещения;2. Температура наружного воздуха (°C);3. Температура помещения (°C);4. Наименование помещения;5. Обозначение конструкции;6. Ориентация;7. Длина (м);8. Высота (м);9. Площадь (м²);10. Коэффициент n;11. Коэффициент k;12. b1;13. b2;14. Коэффициент надбавки;15. Теплопотери (Вт)");
-
-                foreach (var item in items)
-                {
-                    string line = $"{EscapeCsv(item.SpaceNumber)};" +
-                                  $"{item.OutdoorTemp:F1};" +
-                                  $"{item.IndoorTemp:F1};" +
-                                  $"{EscapeCsv(item.SpaceName)};" +
-                                  $"{EscapeCsv(item.Designation)};" +
-                                  $"{EscapeCsv(item.Orientation)};" +
-                                  $"{item.LengthMeters:F2};" +
-                                  $"{item.HeightMeters:F2};" +
-                                  $"{item.AreaSqMeters:F2};" +
-                                  $"{item.CoeffN:F2};" +
-                                  $"{item.CoeffK:F3};" +
-                                  $"{item.B1:F2};" +
-                                  $"{item.B2:F2};" +
-                                  $"{item.CoeffAllowance:F2};" +
-                                  $"{item.HeatLossWatts:F1}";
-
-                    sb.AppendLine(line);
-                }
-
-                File.WriteAllText(csvFilePath, sb.ToString(), Encoding.UTF8);
-                return csvFilePath;
+                double cx = (bb.Min.X + bb.Max.X) / 2.0;
+                double cy = (bb.Min.Y + bb.Max.Y) / 2.0;
+                double cz = (bb.Min.Z + bb.Max.Z) / 2.0;
+                return new XYZ(cx, cy, cz);
             }
             catch
             {
@@ -1037,31 +391,188 @@ namespace BCCPlugIn
             }
         }
 
-        private string EscapeCsv(string val)
+        private void GetConstructionDimensions(
+            Element elem,
+            BuiltInCategory cat,
+            BoundarySegment seg,
+            double roomHeightFt,
+            out double lengthMm,
+            out double heightMm,
+            out double areaSqM)
         {
-            if (string.IsNullOrEmpty(val)) return "";
-            if (val.Contains(";") || val.Contains("\"") || val.Contains("\n"))
+            lengthMm = 0;
+            heightMm = 0;
+            areaSqM  = 0;
+
+            const double ft2mm = 304.8;
+            const double ft2m  = 0.3048;
+
+            try
             {
-                return "\"" + val.Replace("\"", "\"\"") + "\"";
+                if (cat == BuiltInCategory.OST_Walls)
+                {
+                    Wall wall = elem as Wall;
+                    if (wall != null)
+                    {
+                        // Длина по сегменту
+                        Curve c = seg.GetCurve();
+                        lengthMm = c.Length * ft2mm;
+
+                        // Высота стены
+                        Parameter hParam = wall.get_Parameter(BuiltInParameter.WALL_USER_HEIGHT_PARAM);
+                        heightMm = hParam != null
+                            ? hParam.AsDouble() * ft2mm
+                            : roomHeightFt * ft2mm;
+
+                        areaSqM = (lengthMm / 1000.0) * (heightMm / 1000.0);
+                    }
+                }
+                else if (cat == BuiltInCategory.OST_Floors ||
+                         cat == BuiltInCategory.OST_Ceilings ||
+                         cat == BuiltInCategory.OST_StructuralFoundation)
+                {
+                    Parameter areaParam = elem.get_Parameter(BuiltInParameter.HOST_AREA_COMPUTED);
+                    areaSqM = areaParam != null ? areaParam.AsDouble() * ft2m * ft2m : 0;
+
+                    // Длина/высота — из BBox
+                    BoundingBoxXYZ bb = elem.get_BoundingBox(null);
+                    if (bb != null)
+                    {
+                        lengthMm = Math.Abs(bb.Max.X - bb.Min.X) * ft2mm;
+                        heightMm = Math.Abs(bb.Max.Y - bb.Min.Y) * ft2mm;
+                    }
+                }
+                else // Двери, Окна
+                {
+                    Parameter widthParam  = elem.get_Parameter(BuiltInParameter.DOOR_WIDTH)
+                                         ?? elem.get_Parameter(BuiltInParameter.CASEWORK_WIDTH)
+                                         ?? elem.get_Parameter(BuiltInParameter.WINDOW_WIDTH);
+                    Parameter heightParam = elem.get_Parameter(BuiltInParameter.DOOR_HEIGHT)
+                                         ?? elem.get_Parameter(BuiltInParameter.CASEWORK_HEIGHT)
+                                         ?? elem.get_Parameter(BuiltInParameter.WINDOW_HEIGHT);
+
+                    lengthMm = widthParam  != null ? widthParam.AsDouble()  * ft2mm : 0;
+                    heightMm = heightParam != null ? heightParam.AsDouble() * ft2mm : 0;
+
+                    if (lengthMm == 0 || heightMm == 0)
+                    {
+                        BoundingBoxXYZ bb = elem.get_BoundingBox(null);
+                        if (bb != null)
+                        {
+                            lengthMm = Math.Abs(bb.Max.X - bb.Min.X) * ft2mm;
+                            heightMm = Math.Abs(bb.Max.Z - bb.Min.Z) * ft2mm;
+                        }
+                    }
+
+                    areaSqM = (lengthMm / 1000.0) * (heightMm / 1000.0);
+                }
             }
-            return val;
+            catch { /* Оставляем нули */ }
         }
 
-        private XYZ GetSpaceCentroid(Space space)
+        /// <summary>
+        /// Ориентация конструкции по сторонам света (для стен) или горизонтальная.
+        /// </summary>
+        private string GetOrientation(Element elem, BuiltInCategory cat, BoundarySegment seg)
         {
-            LocationPoint locPoint = space.Location as LocationPoint;
-            if (locPoint != null)
-            {
-                return locPoint.Point;
-            }
+            if (cat == BuiltInCategory.OST_Floors ||
+                cat == BuiltInCategory.OST_Ceilings ||
+                cat == BuiltInCategory.OST_StructuralFoundation)
+                return "Горизонтальная";
 
-            BoundingBoxXYZ bbox = space.get_BoundingBox(null);
-            if (bbox != null)
+            try
             {
-                return (bbox.Min + bbox.Max) * 0.5;
-            }
+                // Нормаль стены или направление сегмента
+                XYZ normal = XYZ.BasisX;
 
-            return XYZ.Zero;
+                if (elem is Wall wall)
+                {
+                    normal = wall.Orientation;
+                }
+                else
+                {
+                    Curve c = seg.GetCurve();
+                    XYZ dir = (c.GetEndPoint(1) - c.GetEndPoint(0)).Normalize();
+                    // Нормаль к сегменту (перпендикуляр в плане)
+                    normal = new XYZ(-dir.Y, dir.X, 0);
+                }
+
+                return CompassFromVector(normal);
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        private static string CompassFromVector(XYZ v)
+        {
+            // Проецируем на XY и определяем сторону света
+            double angle = Math.Atan2(v.Y, v.X) * 180.0 / Math.PI;
+            if (angle < 0) angle += 360.0;
+
+            // Восемь секторов
+            if (angle < 22.5  || angle >= 337.5) return "В";   // Восток
+            if (angle < 67.5)                    return "СВ";
+            if (angle < 112.5)                   return "С";    // Север
+            if (angle < 157.5)                   return "СЗ";
+            if (angle < 202.5)                   return "З";    // Запад
+            if (angle < 247.5)                   return "ЮЗ";
+            if (angle < 292.5)                   return "Ю";    // Юг
+            return "ЮВ";
+        }
+
+        /// <summary>
+        /// Метка конструкции: тип элемента + марка типа.
+        /// </summary>
+        private string GetConstructionLabel(Element elem, BuiltInCategory cat)
+        {
+            string typeName = "";
+            ElementType eType = _doc.GetElement(elem.GetTypeId()) as ElementType;
+            if (eType != null) typeName = eType.Name;
+
+            switch (cat)
+            {
+                case BuiltInCategory.OST_Walls:                  return $"Стена: {typeName}";
+                case BuiltInCategory.OST_Floors:                 return $"Перекрытие: {typeName}";
+                case BuiltInCategory.OST_Ceilings:               return $"Потолок: {typeName}";
+                case BuiltInCategory.OST_StructuralFoundation:   return $"Плита: {typeName}";
+                case BuiltInCategory.OST_Doors:                  return $"Дверь: {typeName}";
+                case BuiltInCategory.OST_Windows:                return $"Окно: {typeName}";
+                default:                                          return typeName;
+            }
+        }
+
+        // ───────────────────────────────────────────────────────────────────
+        // Вспомогательные: параметры
+        // ───────────────────────────────────────────────────────────────────
+
+        private static void SetText(Element elem, string paramName, string value)
+        {
+            Parameter p = elem.LookupParameter(paramName);
+            if (p != null && !p.IsReadOnly && p.StorageType == StorageType.String)
+                p.Set(value ?? "");
+        }
+
+        private static void SetNumber(Element elem, string paramName, double value)
+        {
+            Parameter p = elem.LookupParameter(paramName);
+            if (p == null || p.IsReadOnly) return;
+
+            if (p.StorageType == StorageType.Double)
+                p.Set(value);
+            else if (p.StorageType == StorageType.Integer)
+                p.Set((int)Math.Round(value));
+            else if (p.StorageType == StorageType.String)
+                p.Set(value.ToString("G"));
+        }
+
+        private static BuiltInCategory GetBuiltInCategory(Element elem)
+        {
+            if (elem?.Category == null) return BuiltInCategory.INVALID;
+#pragma warning disable CS0618
+            return (BuiltInCategory)(int)elem.Category.Id.Value;
+#pragma warning restore CS0618
         }
     }
 }
