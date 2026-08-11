@@ -5,7 +5,7 @@ using System.Windows;
 using System.Windows.Interop;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
-using Autodesk.Revit.DB.Architecture;
+using Autodesk.Revit.DB.Mechanical;
 using Autodesk.Revit.UI;
 
 namespace BCCPlugIn
@@ -29,19 +29,19 @@ namespace BCCPlugIn
 
             try
             {
-                // ── 1. Проверить наличие помещений ────────────────────────────
-                List<Room> rooms = new FilteredElementCollector(doc)
-                    .OfCategory(BuiltInCategory.OST_Rooms)
+                // ── 1. Проверить наличие пространств ────────────────────────
+                List<Space> spaces = new FilteredElementCollector(doc)
+                    .OfCategory(BuiltInCategory.OST_MEPSpaces)
                     .WhereElementIsNotElementType()
-                    .Cast<Room>()
-                    .Where(r => r.Area > 0)
+                    .Cast<Space>()
+                    .Where(s => s.Area > 0)
                     .ToList();
 
-                if (rooms.Count == 0)
+                if (spaces.Count == 0)
                 {
                     MessageBox.Show(
-                        "В модели не найдено ни одного помещения с площадью > 0.\n" +
-                        "Убедитесь, что помещения расставлены и имеют объём.",
+                        "В модели не найдено ни одного пространства (MEP Space) с площадью > 0.\n" +
+                        "Убедитесь, что пространства расставлены и имеют объём.",
                         "Теплопотери", MessageBoxButton.OK, MessageBoxImage.Information);
                     return Result.Succeeded;
                 }
@@ -66,7 +66,7 @@ namespace BCCPlugIn
                 }
 
                 // ── 3. Показать диалог ────────────────────────────────────────
-                HeatLossWindow window = new HeatLossWindow(genericSymbols, rooms.Count);
+                HeatLossWindow window = new HeatLossWindow(genericSymbols, spaces.Count);
                 WindowInteropHelper helper = new WindowInteropHelper(window);
                 helper.Owner = uiapp.MainWindowHandle;
 
@@ -77,7 +77,7 @@ namespace BCCPlugIn
                 HeatLossEngine engine = new HeatLossEngine(doc);
 
                 int placedCount = engine.Run(
-                    rooms,
+                    spaces,
                     window.SelectedSymbol,
                     window.TempOutside,
                     window.TempInside,
@@ -93,7 +93,7 @@ namespace BCCPlugIn
                 td.MainInstruction = "Расстановка завершена!";
                 td.MainContent =
                     $"Размещено кубиков:  {placedCount}\n" +
-                    $"Помещений обработано:  {rooms.Count}\n" +
+                    $"Пространств обработано:  {spaces.Count}\n" +
                     (schedName != null
                         ? $"Спецификация:  «{schedName}» создана/обновлена."
                         : "Спецификацию создать не удалось (см. журнал).");
