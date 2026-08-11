@@ -18,7 +18,7 @@ namespace BCCPlugIn
         public bool ProcessDoors   => DoorsCheckBox.IsChecked   == true;
         public bool ProcessWindows => WindowsCheckBox.IsChecked == true;
 
-        public bool OnlyActiveView => ActiveViewRadioButton.IsChecked == true;
+        public bool OnlyActiveView => ActiveViewRadioButton?.IsChecked == true;
 
         private readonly List<FamilySymbolItem> _items;
         private readonly int _allSpacesCount;
@@ -55,7 +55,7 @@ namespace BCCPlugIn
 
         private void UpdateInfoText()
         {
-            if (InfoTextBlock == null) return;
+            if (InfoTextBlock == null || ActiveViewRadioButton == null) return;
 
             if (OnlyActiveView)
             {
