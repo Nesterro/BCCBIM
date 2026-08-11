@@ -105,6 +105,52 @@ namespace BCCPlugIn
                     IList<IList<BoundarySegment>> boundaries =
                         space.GetBoundarySegments(boundaryOpts);
 
+                    // Предварительный сканирование ориентаций наружных стен для определения углового помещения
+                    HashSet<string> exteriorOrientations = new HashSet<string>();
+                    foreach (IList<BoundarySegment> loop in boundaries)
+                    {
+                        foreach (BoundarySegment seg in loop)
+                        {
+                            ElementId boundElemId = seg.ElementId;
+                            if (boundElemId == ElementId.InvalidElementId) continue;
+
+                            Element boundElem = null;
+                            Element hostElem = _doc.GetElement(boundElemId);
+                            if (hostElem is RevitLinkInstance rvtLink)
+                            {
+                                Document linkedDoc = rvtLink.GetLinkDocument();
+                                if (linkedDoc != null && seg.LinkElementId != null && seg.LinkElementId != ElementId.InvalidElementId)
+                                {
+                                    boundElem = linkedDoc.GetElement(seg.LinkElementId);
+                                }
+                            }
+                            else
+                            {
+                                boundElem = hostElem;
+                            }
+
+                            BuiltInCategory cat = boundElem != null ? GetBuiltInCategory(boundElem) : BuiltInCategory.OST_Walls;
+                            if (cat == BuiltInCategory.OST_Walls)
+                            {
+                                bool isExterior = true;
+                                if (boundElem is Wall w && w.WallType != null && w.WallType.Function == WallFunction.Interior)
+                                    isExterior = false;
+
+                                if (isExterior)
+                                {
+                                    string o = GetOrientation(boundElem, cat, seg);
+                                    if (!string.IsNullOrEmpty(o) && o != "Горизонтальная")
+                                    {
+                                        exteriorOrientations.Add(o);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    bool isCornerSpace = (exteriorOrientations.Count >= 2);
+                    string cornerTypeStr = isCornerSpace ? "Угловое" : "Обычное";
+
                     // Собрать уникальные элементы-ограждения
                     HashSet<string> processedKeys = new HashSet<string>();
 
@@ -182,7 +228,7 @@ namespace BCCPlugIn
                             double lengthMm  = 0;
                             double heightMm  = 0;
                             double areaSqM   = 0;
-                            string label     = boundElem != null ? GetConstructionLabel(boundElem, cat) : "НС1";
+                            string label     = GetConstructionLabel(boundElem, cat);
                             string orient    = GetOrientation(boundElem, cat, seg);
 
                             if (boundElem != null)
@@ -197,12 +243,20 @@ namespace BCCPlugIn
                                 areaSqM  = (lengthMm / 1000.0) * (heightMm / 1000.0);
                             }
 
+                            // Расчёт надбавок
+                            bool isExteriorElem = (isWall || isDoor || isWindow);
+                            double b1 = GetB1OrientationAddon(orient);
+                            double b2 = (isCornerSpace && isExteriorElem) ? 0.05 : 0.00;
+                            double b3 = 0.00;
+                            double b4 = 0.00;
+                            double coeffAdd = 1.0 + b1 + b2 + b3 + b4;
+
                             // Заполнить параметры
                             SetText(inst, P_ROOM_NUMBER,  roomNumber);
                             SetText(inst, P_ROOM_NAME,    roomName);
                             SetText(inst, P_CONSTR_LABEL, label);
                             SetText(inst, P_ORIENTATION,  orient);
-                            SetText(inst, P_CORNER_TYPE,  "");
+                            SetText(inst, P_CORNER_TYPE,  cornerTypeStr);
 
                             SetNumber(inst, P_TEMP_OUT,  tempOutside);
                             SetNumber(inst, P_TEMP_IN,   tempInside);
@@ -211,11 +265,11 @@ namespace BCCPlugIn
                             SetNumber(inst, P_AREA,      areaSqM);
                             SetNumber(inst, P_COEFF_N,   1); // Коэффициент n по умолчанию 1
                             SetNumber(inst, P_COEFF_K,   0);
-                            SetNumber(inst, P_ADD_B1,    GetB1OrientationAddon(orient)); // Надбавка b1 по ориентации
-                            SetNumber(inst, P_ADD_B2,    0);
-                            SetNumber(inst, P_ADD_B3,    0);
-                            SetNumber(inst, P_ADD_B4,    0);
-                            SetNumber(inst, P_COEFF_ADD, 0);
+                            SetNumber(inst, P_ADD_B1,    b1); // Надбавка b1 по ориентации
+                            SetNumber(inst, P_ADD_B2,    b2); // Надбавка b2 (угловое помещение)
+                            SetNumber(inst, P_ADD_B3,    b3);
+                            SetNumber(inst, P_ADD_B4,    b4);
+                            SetNumber(inst, P_COEFF_ADD, coeffAdd); // Коэффициент надбавки = 1 + b1 + b2 + b3 + b4
                             SetNumber(inst, P_HEAT_LOSS, 0);
 
                             placedCount++;
@@ -224,7 +278,7 @@ namespace BCCPlugIn
                             // ищем расположенные в ней двери и окна
                             if (boundElem != null && isWall && (processDoors || processWindows))
                             {
-                                ProcessWallOpenings(boundElem, linkInst, space, roomNumber, roomName,
+                                ProcessWallOpenings(boundElem, linkInst, space, roomNumber, roomName, cornerTypeStr, isCornerSpace,
                                                     tempOutside, tempInside, symbol, seg, roomHeight,
                                                     processDoors, processWindows, processedKeys, ref placedCount);
                             }
@@ -564,6 +618,8 @@ namespace BCCPlugIn
             Space space,
             string roomNumber,
             string roomName,
+            string cornerTypeStr,
+            bool isCornerSpace,
             double tempOutside,
             double tempInside,
             FamilySymbol symbol,
@@ -648,24 +704,30 @@ namespace BCCPlugIn
                         string label = GetConstructionLabel(opening, openCat);
                         string orient = GetOrientation(opening, openCat, seg);
 
+                        double b1 = GetB1OrientationAddon(orient);
+                        double b2 = isCornerSpace ? 0.05 : 0.00;
+                        double b3 = 0.00;
+                        double b4 = 0.00;
+                        double coeffAdd = 1.0 + b1 + b2 + b3 + b4;
+
                         SetText(inst, P_ROOM_NUMBER, roomNumber);
                         SetText(inst, P_ROOM_NAME, roomName);
                         SetText(inst, P_CONSTR_LABEL, label);
                         SetText(inst, P_ORIENTATION, orient);
-                        SetText(inst, P_CORNER_TYPE, "");
+                        SetText(inst, P_CORNER_TYPE, cornerTypeStr);
 
                         SetNumber(inst, P_TEMP_OUT, tempOutside);
                         SetNumber(inst, P_TEMP_IN, tempInside);
                         SetNumber(inst, P_LENGTH, lMm);
                         SetNumber(inst, P_HEIGHT, hMm);
                         SetNumber(inst, P_AREA, aSqM);
-                        SetNumber(inst, P_COEFF_N, 0);
+                        SetNumber(inst, P_COEFF_N, 1);
                         SetNumber(inst, P_COEFF_K, 0);
-                        SetNumber(inst, P_ADD_B1, 0);
-                        SetNumber(inst, P_ADD_B2, 0);
-                        SetNumber(inst, P_ADD_B3, 0);
-                        SetNumber(inst, P_ADD_B4, 0);
-                        SetNumber(inst, P_COEFF_ADD, 0);
+                        SetNumber(inst, P_ADD_B1, b1);
+                        SetNumber(inst, P_ADD_B2, b2);
+                        SetNumber(inst, P_ADD_B3, b3);
+                        SetNumber(inst, P_ADD_B4, b4);
+                        SetNumber(inst, P_COEFF_ADD, coeffAdd);
                         SetNumber(inst, P_HEAT_LOSS, 0);
 
                         placedCount++;
