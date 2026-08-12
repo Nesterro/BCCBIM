@@ -252,18 +252,22 @@ namespace BCCPlugIn
                                     var imageCtrl = new System.Windows.Controls.Image
                                     {
                                         Source = logoImage,
-                                        Width = 18,
-                                        Height = 18,
-                                        Margin = new System.Windows.Thickness(0, 0, 6, 0),
-                                        VerticalAlignment = System.Windows.VerticalAlignment.Center
+                                        Width = 14,
+                                        Height = 14,
+                                        Margin = new System.Windows.Thickness(0, 0, 4, 0),
+                                        VerticalAlignment = System.Windows.VerticalAlignment.Center,
+                                        SnapsToDevicePixels = true,
+                                        UseLayoutRounding = true
                                     };
+                                    System.Windows.Media.RenderOptions.SetBitmapScalingMode(imageCtrl, System.Windows.Media.BitmapScalingMode.HighQuality);
 
                                     var textBlock = new System.Windows.Controls.TextBlock
                                     {
                                         Text = tabName,
                                         VerticalAlignment = System.Windows.VerticalAlignment.Center,
-                                        FontWeight = System.Windows.FontWeights.Bold,
-                                        FontSize = 12
+                                        FontWeight = System.Windows.FontWeights.SemiBold,
+                                        FontSize = 11.5,
+                                        Margin = new System.Windows.Thickness(0)
                                     };
 
                                     stackPanel.Children.Add(imageCtrl);
