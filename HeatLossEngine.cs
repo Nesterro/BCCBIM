@@ -64,7 +64,8 @@ namespace BCCPlugIn
             FamilySymbol symbol,
             double tempOutside,
             double tempInside,
-            bool processWalls,
+            bool processExteriorWalls,
+            bool processInteriorWalls,
             bool processFloors,
             bool processDoors,
             bool processWindows)
@@ -83,6 +84,29 @@ namespace BCCPlugIn
             using (Transaction tx = new Transaction(_doc, "BIMBCC Теплопотери — расстановка кубиков"))
             {
                 tx.Start();
+
+                // Удалить старые кубики теплопотерь перед новой расстановкой
+                try
+                {
+                    FilteredElementCollector oldCubeCollector = new FilteredElementCollector(_doc);
+                    List<ElementId> oldCubeIds = oldCubeCollector
+                        .OfClass(typeof(FamilyInstance))
+                        .OfCategory(BuiltInCategory.OST_GenericModel)
+                        .WhereElementIsNotElementType()
+                        .Where(e => {
+                            Parameter pMark = e.get_Parameter(BuiltInParameter.ALL_MODEL_MARK);
+                            return (pMark != null && pMark.AsString() != null && pMark.AsString().StartsWith("BCC_HL")) ||
+                                   e.LookupParameter("BCC_HL_Теплопотери") != null;
+                        })
+                        .Select(e => e.Id)
+                        .ToList();
+
+                    if (oldCubeIds.Count > 0)
+                    {
+                        _doc.Delete(oldCubeIds);
+                    }
+                }
+                catch { }
 
                 // Активировать символ
                 if (!symbol.IsActive)
@@ -203,7 +227,18 @@ namespace BCCPlugIn
                             bool isDoor    = (cat == BuiltInCategory.OST_Doors);
                             bool isWindow  = (cat == BuiltInCategory.OST_Windows);
 
-                            if (isWall   && !processWalls)   continue;
+                            bool isExteriorWall = true;
+                            if (isWall && boundElem is Wall wallElem && wallElem.WallType != null && wallElem.WallType.Function == WallFunction.Interior)
+                            {
+                                isExteriorWall = false;
+                            }
+
+                            if (isWall)
+                            {
+                                if (isExteriorWall && !processExteriorWalls) continue;
+                                if (!isExteriorWall && !processInteriorWalls) continue;
+                            }
+
                             if (isFloor  && !processFloors)  continue;
                             if (isDoor   && !processDoors)   continue;
                             if (isWindow && !processWindows) continue;
@@ -999,6 +1034,34 @@ namespace BCCPlugIn
             return Transform.Identity;
         }
 
+        private double GetIntersectionParam2D(XYZ p0, double ux, double uy, BoundarySegment cornerSeg)
+        {
+            if (cornerSeg == null) return 0.0;
+            Transform trans = GetSegmentTransform(cornerSeg);
+            Curve curve = cornerSeg.GetCurve();
+            if (curve == null) return 0.0;
+
+            XYZ q0 = trans.OfPoint(curve.GetEndPoint(0));
+            XYZ q1 = trans.OfPoint(curve.GetEndPoint(1));
+
+            double vx = q1.X - q0.X;
+            double vy = q1.Y - q0.Y;
+
+            double det = ux * vy - uy * vx;
+            if (Math.Abs(det) > 0.001)
+            {
+                double num = (q0.X - p0.X) * vy - (q0.Y - p0.Y) * vx;
+                return num / det;
+            }
+
+            // Fallback если детерминант близко к 0 (параллельные линии)
+            double t0 = (q0.X - p0.X) * ux + (q0.Y - p0.Y) * uy;
+            double t1 = (q1.X - p0.X) * ux + (q1.Y - p0.Y) * uy;
+            double d0 = (q0 - (p0 + new XYZ(ux, uy, 0) * t0)).GetLength();
+            double d1 = (q1 - (p0 + new XYZ(ux, uy, 0) * t1)).GetLength();
+            return (d0 < d1) ? t0 : t1;
+        }
+
         private double GetSpaceCroppedWallLengthFt(
             BoundarySegment seg,
             IList<BoundarySegment> loop,
@@ -1018,7 +1081,8 @@ namespace BCCPlugIn
 
             if (dirLen < 0.001) return c.Length;
 
-            XYZ u = dir.Normalize();
+            double ux = dir.X / dirLen;
+            double uy = dir.Y / dirLen;
 
             double spaceInnerLengthFt = c.Length;
 
@@ -1052,34 +1116,11 @@ namespace BCCPlugIn
 
                 if (prevCornerSeg != null && nextCornerSeg != null)
                 {
-                    // Проекция угла prevCornerSeg
-                    Transform prevTrans = GetSegmentTransform(prevCornerSeg);
-                    Curve prevCurve = prevCornerSeg.GetCurve();
-                    XYZ pt0_prev = prevTrans.OfPoint(prevCurve.GetEndPoint(0));
-                    XYZ pt1_prev = prevTrans.OfPoint(prevCurve.GetEndPoint(1));
-
-                    double tPrev0 = (pt0_prev - p0).DotProduct(u);
-                    double tPrev1 = (pt1_prev - p0).DotProduct(u);
-
-                    double dPrev0 = pt0_prev.DistanceTo(p0 + u * tPrev0);
-                    double dPrev1 = pt1_prev.DistanceTo(p0 + u * tPrev1);
-                    double tCorner1 = (dPrev0 < dPrev1) ? tPrev0 : tPrev1;
-
-                    // Проекция угла nextCornerSeg
-                    Transform nextTrans = GetSegmentTransform(nextCornerSeg);
-                    Curve nextCurve = nextCornerSeg.GetCurve();
-                    XYZ pt0_next = nextTrans.OfPoint(nextCurve.GetEndPoint(0));
-                    XYZ pt1_next = nextTrans.OfPoint(nextCurve.GetEndPoint(1));
-
-                    double tNext0 = (pt0_next - p0).DotProduct(u);
-                    double tNext1 = (pt1_next - p0).DotProduct(u);
-
-                    double dNext0 = pt0_next.DistanceTo(p0 + u * tNext0);
-                    double dNext1 = pt1_next.DistanceTo(p0 + u * tNext1);
-                    double tCorner2 = (dNext0 < dNext1) ? tNext0 : tNext1;
+                    double tCorner1 = GetIntersectionParam2D(p0, ux, uy, prevCornerSeg);
+                    double tCorner2 = GetIntersectionParam2D(p0, ux, uy, nextCornerSeg);
 
                     double span = Math.Abs(tCorner2 - tCorner1);
-                    if (span > 0.01 && span < dirLen + 5.0)
+                    if (span > 0.01 && span < dirLen + 10.0)
                     {
                         spaceInnerLengthFt = span;
                     }
