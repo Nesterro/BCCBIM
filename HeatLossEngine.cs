@@ -41,7 +41,7 @@ namespace BCCPlugIn
         };
         private static readonly string[] AllNumberParams = new[]
         {
-            P_TEMP_OUT, P_TEMP_IN, P_LENGTH, P_HEIGHT, P_AREA,
+            P_TEMP_OUT, P_TEMP_IN, P_AREA,
             P_COEFF_N, P_COEFF_K, P_ADD_B1, P_ADD_B2, P_ADD_B3,
             P_ADD_B4, P_COEFF_ADD, P_HEAT_LOSS
         };
@@ -303,17 +303,18 @@ namespace BCCPlugIn
                                             double coeffAdd = 1.0 + b1 + b2 + b3 + b4;
 
                                             // Заполнить параметры
-                                            double totalOpeningsWidthMm = 0;
+                                            double grossWallAreaSqM = (lengthMm / 1000.0) * (heightMm / 1000.0);
+                                            double totalOpeningsAreaSqM = 0;
                                             if (boundElem != null && isWall)
                                             {
-                                                totalOpeningsWidthMm = ProcessWallOpenings(boundElem, linkInst, space, roomNumber, roomName,
+                                                totalOpeningsAreaSqM = ProcessWallOpenings(boundElem, linkInst, space, roomNumber, roomName,
                                                     cornerTypeStr, isCornerSpace, tempOutside, effectiveTempIn, symbol, seg, roomHeight,
                                                     processDoors, processWindows, isInteriorWall, processInteriorWalls, processedKeys, ref placedCount);
                                             }
 
-                                            double netLengthMm = (isWall && totalOpeningsWidthMm > 0)
-                                                ? Math.Max(100.0, lengthMm - totalOpeningsWidthMm)
-                                                : lengthMm;
+                                            double netWallAreaSqM = isWall
+                                                ? Math.Max(0.01, Math.Round(grossWallAreaSqM - totalOpeningsAreaSqM, 2))
+                                                : Math.Round(areaSqM, 2);
 
                                             SetText(inst, P_ROOM_NUMBER,  roomNumber);
                                             SetText(inst, P_ROOM_NAME,    roomName);
@@ -323,8 +324,7 @@ namespace BCCPlugIn
 
                                             SetNumber(inst, P_TEMP_OUT,  tempOutside);
                                             SetNumber(inst, P_TEMP_IN,   effectiveTempIn);
-                                            SetNumber(inst, P_LENGTH,    netLengthMm);
-                                            SetNumber(inst, P_HEIGHT,    heightMm);
+                                            SetNumber(inst, P_AREA,      netWallAreaSqM);
                                             SetNumber(inst, P_COEFF_N,   1); // Коэффициент n по умолчанию 1
                                             SetNumber(inst, P_COEFF_K,   0);
                                             SetNumber(inst, P_ADD_B1,    b1); // Надбавка b1 по ориентации
@@ -461,8 +461,7 @@ namespace BCCPlugIn
                     {
                         P_ROOM_NUMBER, P_ROOM_NAME, P_TEMP_OUT, P_TEMP_IN,
                         P_CORNER_TYPE, P_CONSTR_LABEL, P_ORIENTATION,
-                        P_LENGTH, P_HEIGHT, P_AREA,
-                        P_COEFF_N, P_COEFF_K,
+                        P_AREA, P_COEFF_N, P_COEFF_K,
                         P_ADD_B1, P_ADD_B2, P_ADD_B3, P_ADD_B4,
                         P_COEFF_ADD, P_HEAT_LOSS
                     };
@@ -747,8 +746,6 @@ namespace BCCPlugIn
             { P_CORNER_TYPE,   new Guid("a1b2c3d4-0005-4000-8000-000000000005") },
             { P_CONSTR_LABEL,  new Guid("a1b2c3d4-0006-4000-8000-000000000006") },
             { P_ORIENTATION,   new Guid("a1b2c3d4-0007-4000-8000-000000000007") },
-            { P_LENGTH,        new Guid("a1b2c3d4-0008-4000-8000-000000000008") },
-            { P_HEIGHT,        new Guid("a1b2c3d4-0009-4000-8000-000000000009") },
             { P_AREA,          new Guid("a1b2c3d4-0010-4000-8000-000000000010") },
             { P_COEFF_N,       new Guid("a1b2c3d4-0011-4000-8000-000000000011") },
             { P_COEFF_K,       new Guid("a1b2c3d4-0012-4000-8000-000000000012") },
@@ -823,10 +820,21 @@ namespace BCCPlugIn
                             EnsureFamilyParameter(famMgr, grp, name, SpecTypeId.Number, ref modified, isInstanceParam);
                         }
 
-                        // 3. Словарь формул для параметров кубика
+                        // 3. Снять формулу с P_AREA (если была)
+                        FamilyParameter fpArea = famMgr.get_Parameter(P_AREA);
+                        if (fpArea != null && !string.IsNullOrEmpty(fpArea.Formula))
+                        {
+                            try
+                            {
+                                famMgr.SetFormula(fpArea, null);
+                                modified = true;
+                            }
+                            catch { }
+                        }
+
+                        // 4. Словарь формул для параметров кубика
                         Dictionary<string, string> formulas = new Dictionary<string, string>
                         {
-                            { P_AREA, $"([{P_LENGTH}] / 1000) * ([{P_HEIGHT}] / 1000)" },
                             { P_COEFF_ADD, $"1 + [{P_ADD_B1}] + [{P_ADD_B2}] + [{P_ADD_B3}] + [{P_ADD_B4}]" },
                             { P_HEAT_LOSS, $"([{P_TEMP_IN}] - [{P_TEMP_OUT}]) * [{P_AREA}] * [{P_COEFF_N}] * [{P_COEFF_K}] * [{P_COEFF_ADD}]" }
                         };
@@ -993,7 +1001,7 @@ namespace BCCPlugIn
             HashSet<string> processedKeys,
             ref int placedCount)
         {
-            double totalOpeningsWidthMm = 0;
+            double totalOpeningsAreaSqM = 0;
             try
             {
                 Document doc = wallElem.Document;
@@ -1083,6 +1091,8 @@ namespace BCCPlugIn
                         double b3 = 0.00;
                         double b4 = 0.00;
 
+                        double openingAreaSqM = Math.Round(aSqM, 2);
+
                         SetText(inst, P_ROOM_NUMBER, roomNumber);
                         SetText(inst, P_ROOM_NAME, roomName);
                         SetText(inst, P_CONSTR_LABEL, label);
@@ -1091,8 +1101,7 @@ namespace BCCPlugIn
 
                         SetNumber(inst, P_TEMP_OUT, tempOutside);
                         SetNumber(inst, P_TEMP_IN, tempInside);
-                        SetNumber(inst, P_LENGTH, lMm);
-                        SetNumber(inst, P_HEIGHT, hMm);
+                        SetNumber(inst, P_AREA, openingAreaSqM);
                         SetNumber(inst, P_COEFF_N, 1);
                         SetNumber(inst, P_COEFF_K, 0);
                         SetNumber(inst, P_ADD_B1, b1);
@@ -1100,14 +1109,14 @@ namespace BCCPlugIn
                         SetNumber(inst, P_ADD_B3, b3);
                         SetNumber(inst, P_ADD_B4, b4);
 
-                        totalOpeningsWidthMm += lMm;
+                        totalOpeningsAreaSqM += openingAreaSqM;
                         placedCount++;
                     }
                 }
             }
             catch { }
 
-            return totalOpeningsWidthMm;
+            return totalOpeningsAreaSqM;
         }
 
         private void GetConstructionDimensions(
