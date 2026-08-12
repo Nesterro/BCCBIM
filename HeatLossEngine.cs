@@ -120,6 +120,9 @@ namespace BCCPlugIn
                     SpatialElementBoundaryLocation = SpatialElementBoundaryLocation.Finish
                 };
 
+                // Построить карту количества пространств, примыкающих к каждому ограждению
+                Dictionary<string, int> wallSpaceCountMap = BuildWallSpaceCountMap(spaces, boundaryOpts);
+
                 foreach (Space space in spaces)
                 {
                     string roomNumber, roomName;
@@ -156,11 +159,12 @@ namespace BCCPlugIn
                             BuiltInCategory cat = boundElem != null ? GetBuiltInCategory(boundElem) : BuiltInCategory.OST_Walls;
                             if (cat == BuiltInCategory.OST_Walls)
                             {
-                                bool isExterior = true;
-                                if (boundElem is Wall w && w.WallType != null && w.WallType.Function == WallFunction.Interior)
-                                    isExterior = false;
+                                string key = (seg.LinkElementId != null && seg.LinkElementId != ElementId.InvalidElementId)
+                                    ? seg.ElementId.IntegerValue.ToString() + "_" + seg.LinkElementId.IntegerValue.ToString()
+                                    : seg.ElementId.IntegerValue.ToString();
 
-                                if (isExterior)
+                                bool isInterior = IsInteriorWall(boundElem, key, wallSpaceCountMap);
+                                if (!isInterior)
                                 {
                                     string o = GetOrientation(boundElem, cat, seg);
                                     if (!string.IsNullOrEmpty(o) && o != "Горизонтальная")
@@ -227,16 +231,16 @@ namespace BCCPlugIn
                             bool isDoor    = (cat == BuiltInCategory.OST_Doors);
                             bool isWindow  = (cat == BuiltInCategory.OST_Windows);
 
-                            bool isExteriorWall = true;
-                            if (isWall && boundElem is Wall wallElem && wallElem.WallType != null && wallElem.WallType.Function == WallFunction.Interior)
-                            {
-                                isExteriorWall = false;
-                            }
+                            string wallKey = (seg.LinkElementId != null && seg.LinkElementId != ElementId.InvalidElementId)
+                                ? seg.ElementId.IntegerValue.ToString() + "_" + seg.LinkElementId.IntegerValue.ToString()
+                                : seg.ElementId.IntegerValue.ToString();
+
+                            bool isInteriorWall = IsInteriorWall(boundElem, wallKey, wallSpaceCountMap);
 
                             if (isWall)
                             {
-                                if (isExteriorWall && !processExteriorWalls) continue;
-                                if (!isExteriorWall && !processInteriorWalls) continue;
+                                if (!isInteriorWall && !processExteriorWalls) continue;
+                                if (isInteriorWall  && !processInteriorWalls) continue;
                             }
 
                             if (isFloor  && !processFloors)  continue;
@@ -995,6 +999,78 @@ namespace BCCPlugIn
                 }
             }
             catch { /* Оставляем нули */ }
+        }
+
+        private static Dictionary<string, int> BuildWallSpaceCountMap(List<Space> spaces, SpatialElementBoundaryOptions boundaryOpts)
+        {
+            Dictionary<string, int> map = new Dictionary<string, int>();
+            if (spaces == null) return map;
+
+            foreach (Space space in spaces)
+            {
+                IList<IList<BoundarySegment>> boundaries = space.GetBoundarySegments(boundaryOpts);
+                if (boundaries == null) continue;
+
+                HashSet<string> spaceWallKeys = new HashSet<string>();
+
+                foreach (IList<BoundarySegment> loop in boundaries)
+                {
+                    if (loop == null) continue;
+                    foreach (BoundarySegment seg in loop)
+                    {
+                        if (seg == null || seg.ElementId == ElementId.InvalidElementId) continue;
+
+                        string key = (seg.LinkElementId != null && seg.LinkElementId != ElementId.InvalidElementId)
+                            ? seg.ElementId.IntegerValue.ToString() + "_" + seg.LinkElementId.IntegerValue.ToString()
+                            : seg.ElementId.IntegerValue.ToString();
+
+                        spaceWallKeys.Add(key);
+                    }
+                }
+
+                foreach (string key in spaceWallKeys)
+                {
+                    if (!map.ContainsKey(key))
+                        map[key] = 0;
+                    map[key]++;
+                }
+            }
+            return map;
+        }
+
+        private static bool IsInteriorWall(Element boundElem, string wallKey, Dictionary<string, int> wallSpaceCountMap)
+        {
+            if (boundElem is Wall w)
+            {
+                // 1. Проверка свойства WallType.Function
+                if (w.WallType != null && w.WallType.Function == WallFunction.Interior)
+                    return true;
+
+                // 2. Проверка наименования типа стены
+                string typeName = w.WallType != null ? w.WallType.Name.ToLower() : "";
+                string familyName = w.WallType != null ? w.WallType.FamilyName.ToLower() : "";
+                string combinedName = typeName + " " + familyName;
+
+                if (combinedName.Contains("внутр") ||
+                    combinedName.Contains("перегород") ||
+                    combinedName.Contains("межкомн") ||
+                    combinedName.Contains("межквар") ||
+                    combinedName.Contains("панель вн") ||
+                    combinedName.Contains("int") ||
+                    combinedName.Contains("part"))
+                {
+                    return true;
+                }
+            }
+
+            // 3. Топологическая проверка (стена разделяет 2 или более помещений в модели)
+            if (!string.IsNullOrEmpty(wallKey) && wallSpaceCountMap != null && wallSpaceCountMap.TryGetValue(wallKey, out int count))
+            {
+                if (count >= 2)
+                    return true;
+            }
+
+            return false;
         }
 
         private static bool IsColinear(BoundarySegment s1, BoundarySegment s2)
