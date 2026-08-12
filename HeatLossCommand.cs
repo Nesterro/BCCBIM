@@ -120,7 +120,8 @@ namespace BCCPlugIn
                     window.SelectedSymbol,
                     window.TempOutside,
                     window.TempInside,
-                    window.ProcessWalls,
+                    window.ProcessExteriorWalls,
+                    window.ProcessInteriorWalls,
                     window.ProcessFloors,
                     window.ProcessDoors,
                     window.ProcessWindows);
