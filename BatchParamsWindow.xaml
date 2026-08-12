@@ -376,8 +376,9 @@
 
                             <TextBlock Grid.Column="0" Text="2. ИТЕРАЦИЯ: ПОДГОТОВЛЕННЫЕ ПАРАМЕТРЫ К ЗАПИСИ" FontSize="12" FontWeight="Bold" Foreground="#1B5E20" VerticalAlignment="Center" Margin="0,0,16,0"/>
 
-                            <!-- ICON TOOLBAR FOR STEP 2 ACTIONS -->
+                            <!-- ICON TOOLBAR & SEARCH FOR STEP 2 ACTIONS -->
                             <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                                <TextBox x:Name="Step2SearchTextBox" TextChanged="Step2SearchTextBox_TextChanged" Width="240" Height="30" Margin="0,0,12,0" VerticalAlignment="Center" ToolTip="🔍 Поиск параметра по имени, группе или GUID..." AutomationProperties.Name="Поиск параметров в списке к записи"/>
                                 <Button Content="➕" Style="{StaticResource IconButtonStyle}" ToolTip="Добавить пользовательский параметр" Click="AddCustomParam_Click" AutomationProperties.Name="Создать пользовательский параметр"/>
                                 <Button Content="💾" Style="{StaticResource IconButtonStyle}" ToolTip="Сохранить пресет (JSON)" Click="SavePreset_Click" AutomationProperties.Name="Сохранить пресет параметров"/>
                                 <Button Content="📂" Style="{StaticResource IconButtonStyle}" ToolTip="Загрузить пресет (JSON)" Click="LoadPreset_Click" AutomationProperties.Name="Загрузить пресет параметров"/>
