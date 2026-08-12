@@ -166,6 +166,32 @@ namespace BCCPlugIn
             FilterSourceFopParams();
         }
 
+        private void Step2SearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            string search = Step2SearchTextBox.Text?.Trim().ToLowerInvariant() ?? "";
+            System.ComponentModel.ICollectionView view = System.Windows.Data.CollectionViewSource.GetDefaultView(StagedParamsDataGrid.ItemsSource);
+            if (view != null)
+            {
+                if (string.IsNullOrEmpty(search))
+                {
+                    view.Filter = null;
+                }
+                else
+                {
+                    view.Filter = obj =>
+                    {
+                        if (obj is SharedParamItem item)
+                        {
+                            return (item.Name != null && item.Name.ToLowerInvariant().Contains(search)) ||
+                                   (item.GroupName != null && item.GroupName.ToLowerInvariant().Contains(search)) ||
+                                   (item.Guid != null && item.Guid.ToString().ToLowerInvariant().Contains(search));
+                        }
+                        return false;
+                    };
+                }
+            }
+        }
+
         private void SelectAllSourceFop_Click(object sender, RoutedEventArgs e)
         {
             foreach (var p in _filteredSourceFopParams) p.IsSelected = true;
