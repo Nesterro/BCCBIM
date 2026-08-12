@@ -77,10 +77,10 @@ namespace BCCPlugIn
             // 1. Убедиться, что в семействе кубика есть все общие параметры и формулы
             EnsureCubeFamilyParametersAndFormulas(symbol);
 
-            using (Transaction tx = new Transaction(_doc, "BIMBCC Теплопотери — добавление параметров"))
+            using (Transaction tx = new Transaction(_doc, "BIMBCC Теплопотери — очистка конфликтующих параметров проекта"))
             {
                 tx.Start();
-                EnsureProjectParameters();
+                CleanupConflictingProjectBindings();
                 tx.Commit();
             }
 
@@ -330,15 +330,12 @@ namespace BCCPlugIn
                                             SetNumber(inst, P_TEMP_IN,   tempInside);
                                             SetNumber(inst, P_LENGTH,    lengthMm);
                                             SetNumber(inst, P_HEIGHT,    heightMm);
-                                            SetNumber(inst, P_AREA,      areaSqM);
                                             SetNumber(inst, P_COEFF_N,   1); // Коэффициент n по умолчанию 1
                                             SetNumber(inst, P_COEFF_K,   0);
                                             SetNumber(inst, P_ADD_B1,    b1); // Надбавка b1 по ориентации
                                             SetNumber(inst, P_ADD_B2,    b2); // Надбавка b2 (угловое помещение)
                                             SetNumber(inst, P_ADD_B3,    b3);
                                             SetNumber(inst, P_ADD_B4,    b4);
-                                            SetNumber(inst, P_COEFF_ADD, coeffAdd); // Коэффициент надбавки = 1 + b1 + b2 + b3 + b4
-                                            SetNumber(inst, P_HEAT_LOSS, 0);
 
                                             placedCount++;
                                         }
@@ -685,91 +682,57 @@ namespace BCCPlugIn
         }
 
         // ───────────────────────────────────────────────────────────────────
-        // Добавление параметров проекта в категорию OST_GenericModel
+        // Очистка конфликтующих параметров проекта в категории OST_GenericModel
         // ───────────────────────────────────────────────────────────────────
-        private void EnsureProjectParameters()
+        private void CleanupConflictingProjectBindings()
         {
-            CategorySet catSet = _doc.Application.Create.NewCategorySet();
-            Category genericCat = _doc.Settings.Categories.get_Item(BuiltInCategory.OST_GenericModel);
-            catSet.Insert(genericCat);
-
-            InstanceBinding instanceBinding =
-                _doc.Application.Create.NewInstanceBinding(catSet);
-
-            BindingMap bindMap = _doc.ParameterBindings;
-
-            // Текстовые параметры
-            foreach (string name in AllTextParams)
-                EnsureParam(bindMap, instanceBinding, name,
-                    SpecTypeId.String.Text, GroupTypeId.Data);
-
-            // Числовые параметры
-            foreach (string name in AllNumberParams)
-                EnsureParam(bindMap, instanceBinding, name,
-                    SpecTypeId.Number, GroupTypeId.Data);
-        }
-
-        private void EnsureParam(
-            BindingMap bindMap,
-            InstanceBinding binding,
-            string paramName,
-            ForgeTypeId specTypeId,
-            ForgeTypeId groupTypeId)
-        {
-            // Проверить, не существует ли уже
-            DefinitionBindingMapIterator it = bindMap.ForwardIterator();
-            while (it.MoveNext())
-            {
-                if (it.Key.Name == paramName) return; // уже есть
-            }
-
-            // Revit 2024: создаём параметр проекта через временный файл ФОП
-            string originalSharedParamFile = _doc.Application.SharedParametersFilename;
-            string tempFile = System.IO.Path.GetTempFileName();
-
             try
             {
-                // Инициализируем пустой временный файл ФОП
-                System.IO.File.WriteAllText(tempFile,
-                    "# This is a Revit shared parameter file.\r\n" +
-                    "# Do not edit manually.\r\n" +
-                    "*META\tVERSION\tMINVERSION\r\n" +
-                    "META\t2\t1\r\n" +
-                    "*GROUP\tID\tNAME\r\n" +
-                    "GROUP\t1\tBIMBCC\r\n" +
-                    "*PARAM\tGUID\tNAME\tDATATYPE\tDATACATEGORY\tGROUP\tVISIBLE\tDESCRIPTION\tUSERMODIFIABLE\tHIDEWHENNOVALUE\r\n");
-
-                _doc.Application.SharedParametersFilename = tempFile;
-                DefinitionFile defFile = _doc.Application.OpenSharedParameterFile();
-
-                // Создаём группу и определение
-                DefinitionGroup grp = defFile.Groups.get_Item("BIMBCC")
-                                   ?? defFile.Groups.Create("BIMBCC");
-
-                ExternalDefinitionCreationOptions extOpts =
-                    new ExternalDefinitionCreationOptions(paramName, specTypeId)
-                    {
-                        UserModifiable = true
-                    };
-
-                ExternalDefinition extDef = grp.Definitions.Create(extOpts) as ExternalDefinition;
-                if (extDef == null) return;
-
-                bindMap.Insert(extDef, binding, groupTypeId);
-            }
-            finally
-            {
-                // Восстанавливаем исходный файл ФОП
-                try
+                BindingMap bindMap = _doc.ParameterBindings;
+                List<Definition> defsToRemove = new List<Definition>();
+                DefinitionBindingMapIterator it = bindMap.ForwardIterator();
+                while (it.MoveNext())
                 {
-                    _doc.Application.SharedParametersFilename =
-                        string.IsNullOrEmpty(originalSharedParamFile) ? "" : originalSharedParamFile;
+                    Definition def = it.Key;
+                    if (def != null && (AllTextParams.Contains(def.Name) || AllNumberParams.Contains(def.Name)))
+                    {
+                        defsToRemove.Add(def);
+                    }
                 }
-                catch { }
 
-                try { System.IO.File.Delete(tempFile); } catch { }
+                foreach (Definition def in defsToRemove)
+                {
+                    try
+                    {
+                        bindMap.Remove(def);
+                    }
+                    catch { }
+                }
             }
+            catch { }
         }
+
+        private static readonly Dictionary<string, Guid> ParameterGuids = new Dictionary<string, Guid>
+        {
+            { P_ROOM_NUMBER,   new Guid("a1b2c3d4-0001-4000-8000-000000000001") },
+            { P_ROOM_NAME,     new Guid("a1b2c3d4-0002-4000-8000-000000000002") },
+            { P_TEMP_OUT,      new Guid("a1b2c3d4-0003-4000-8000-000000000003") },
+            { P_TEMP_IN,       new Guid("a1b2c3d4-0004-4000-8000-000000000004") },
+            { P_CORNER_TYPE,   new Guid("a1b2c3d4-0005-4000-8000-000000000005") },
+            { P_CONSTR_LABEL,  new Guid("a1b2c3d4-0006-4000-8000-000000000006") },
+            { P_ORIENTATION,   new Guid("a1b2c3d4-0007-4000-8000-000000000007") },
+            { P_LENGTH,        new Guid("a1b2c3d4-0008-4000-8000-000000000008") },
+            { P_HEIGHT,        new Guid("a1b2c3d4-0009-4000-8000-000000000009") },
+            { P_AREA,          new Guid("a1b2c3d4-0010-4000-8000-000000000010") },
+            { P_COEFF_N,       new Guid("a1b2c3d4-0011-4000-8000-000000000011") },
+            { P_COEFF_K,       new Guid("a1b2c3d4-0012-4000-8000-000000000012") },
+            { P_ADD_B1,        new Guid("a1b2c3d4-0013-4000-8000-000000000013") },
+            { P_ADD_B2,        new Guid("a1b2c3d4-0014-4000-8000-000000000014") },
+            { P_ADD_B3,        new Guid("a1b2c3d4-0015-4000-8000-000000000015") },
+            { P_ADD_B4,        new Guid("a1b2c3d4-0016-4000-8000-000000000016") },
+            { P_COEFF_ADD,     new Guid("a1b2c3d4-0017-4000-8000-000000000017") },
+            { P_HEAT_LOSS,     new Guid("a1b2c3d4-0018-4000-8000-000000000018") }
+        };
 
         private void EnsureCubeFamilyParametersAndFormulas(FamilySymbol symbol)
         {
@@ -786,18 +749,33 @@ namespace BCCPlugIn
 
                 try
                 {
-                    System.IO.File.WriteAllText(tempFile,
-                        "# This is a Revit shared parameter file.\r\n" +
-                        "# Do not edit manually.\r\n" +
-                        "*META\tVERSION\tMINVERSION\r\n" +
-                        "META\t2\t1\r\n" +
-                        "*GROUP\tID\tNAME\r\n" +
-                        "GROUP\t1\tBIMBCC\r\n" +
-                        "*PARAM\tGUID\tNAME\tDATATYPE\tDATACATEGORY\tGROUP\tVISIBLE\tDESCRIPTION\tUSERMODIFIABLE\tHIDEWHENNOVALUE\r\n");
+                    System.Text.StringBuilder sb = new System.Text.StringBuilder();
+                    sb.AppendLine("# This is a Revit shared parameter file.");
+                    sb.AppendLine("# Do not edit manually.");
+                    sb.AppendLine("*META\tVERSION\tMINVERSION");
+                    sb.AppendLine("META\t2\t1");
+                    sb.AppendLine("*GROUP\tID\tNAME");
+                    sb.AppendLine("GROUP\t1\tBIMBCC_HeatLoss");
+                    sb.AppendLine("*PARAM\tGUID\tNAME\tDATATYPE\tDATACATEGORY\tGROUP\tVISIBLE\tDESCRIPTION\tUSERMODIFIABLE\tHIDEWHENNOVALUE");
+
+                    foreach (string name in AllTextParams)
+                    {
+                        Guid g = ParameterGuids[name];
+                        sb.AppendLine($"PARAM\t{g}\t{name}\tTEXT\t\t1\t1\t\t1\t0");
+                    }
+                    foreach (string name in AllNumberParams)
+                    {
+                        Guid g = ParameterGuids[name];
+                        sb.AppendLine($"PARAM\t{g}\t{name}\tNUMBER\t\t1\t1\t\t1\t0");
+                    }
+
+                    System.IO.File.WriteAllText(tempFile, sb.ToString(), System.Text.Encoding.UTF8);
 
                     _doc.Application.SharedParametersFilename = tempFile;
                     DefinitionFile defFile = _doc.Application.OpenSharedParameterFile();
-                    DefinitionGroup grp = defFile.Groups.get_Item("BIMBCC") ?? defFile.Groups.Create("BIMBCC");
+                    if (defFile == null) return;
+
+                    DefinitionGroup grp = defFile.Groups.get_Item("BIMBCC_HeatLoss") ?? defFile.Groups.Create("BIMBCC_HeatLoss");
 
                     bool modified = false;
 
@@ -882,8 +860,10 @@ namespace BCCPlugIn
                 Definition def = grp.Definitions.get_Item(paramName);
                 if (def == null)
                 {
+                    Guid paramGuid = ParameterGuids.ContainsKey(paramName) ? ParameterGuids[paramName] : Guid.NewGuid();
                     ExternalDefinitionCreationOptions extOpts = new ExternalDefinitionCreationOptions(paramName, specTypeId)
                     {
+                        GUID = paramGuid,
                         UserModifiable = true
                     };
                     def = grp.Definitions.Create(extOpts);
@@ -905,21 +885,21 @@ namespace BCCPlugIn
             return fp;
         }
 
-    public class CustomFamilyLoadOptions : IFamilyLoadOptions
-    {
-        public bool OnFamilyFound(bool familyInUse, out bool overwriteParameterValues)
+        public class CustomFamilyLoadOptions : IFamilyLoadOptions
         {
-            overwriteParameterValues = true;
-            return true;
-        }
+            public bool OnFamilyFound(bool familyInUse, out bool overwriteParameterValues)
+            {
+                overwriteParameterValues = true;
+                return true;
+            }
 
-        public bool OnSharedFamilyFound(Family sharedFamily, bool familyInUse, out FamilySource source, out bool overwriteParameterValues)
-        {
-            source = FamilySource.Family;
-            overwriteParameterValues = true;
-            return true;
+            public bool OnSharedFamilyFound(Family sharedFamily, bool familyInUse, out FamilySource source, out bool overwriteParameterValues)
+            {
+                source = FamilySource.Family;
+                overwriteParameterValues = true;
+                return true;
+            }
         }
-    }
 
         // ───────────────────────────────────────────────────────────────────
         // Вспомогательные: геометрия
@@ -1086,15 +1066,12 @@ namespace BCCPlugIn
                         SetNumber(inst, P_TEMP_IN, tempInside);
                         SetNumber(inst, P_LENGTH, lMm);
                         SetNumber(inst, P_HEIGHT, hMm);
-                        SetNumber(inst, P_AREA, aSqM);
                         SetNumber(inst, P_COEFF_N, 1);
                         SetNumber(inst, P_COEFF_K, 0);
                         SetNumber(inst, P_ADD_B1, b1);
                         SetNumber(inst, P_ADD_B2, b2);
                         SetNumber(inst, P_ADD_B3, b3);
                         SetNumber(inst, P_ADD_B4, b4);
-                        SetNumber(inst, P_COEFF_ADD, coeffAdd);
-                        SetNumber(inst, P_HEAT_LOSS, 0);
 
                         placedCount++;
                     }
