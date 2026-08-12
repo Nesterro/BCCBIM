@@ -756,6 +756,93 @@ namespace BCCPlugIn
             }
         }
 
+        private void LoadModelParams_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                List<SharedParamItem> existing = BatchParamsEngine.GetExistingDocumentParameters(_doc);
+                if (existing.Count == 0)
+                {
+                    MessageBox.Show(this, "В текущей модели не найдено привязанных параметров.", "Менеджер параметров", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                _stagedParams.Clear();
+                foreach (var item in existing)
+                {
+                    _stagedParams.Add(item);
+                }
+                UpdateStagedParamsCount();
+                ProgressStatusTextBlock.Text = $"Загружено {existing.Count} параметров из модели. Отметьте нужные для удаления или настройки.";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"Ошибка загрузки параметров модели:\n{ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void ExecuteDelete_Click(object sender, RoutedEventArgs e)
+        {
+            var selected = _stagedParams.Where(p => p.IsSelected).ToList();
+            if (selected.Count == 0)
+            {
+                MessageBox.Show(this, "Пожалуйста, отметьте галочками параметры в таблице Step 2, которые необходимо удалить из модели.", "Менеджер параметров", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            string targetDocType = (_doc != null && _doc.IsFamilyDocument) ? "семейства" : "проекта";
+            var confirmResult = MessageBox.Show(this,
+                $"Вы действительно хотите окончательно удалить {selected.Count} выбранных параметров из текущего {targetDocType}?\n\nВнимание: Это действие отменит привязку параметров и удалит их определение из модели.",
+                "Подтверждение пакетного удаления",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+
+            if (confirmResult != MessageBoxResult.Yes) return;
+
+            try
+            {
+                BatchProgressBar.Value = 0;
+                ProgressStatusTextBlock.Text = "Выполняется пакетное удаление параметров из модели...";
+
+                var (deletedCount, failedParams) = BatchParamsEngine.ExecuteBatchDeleteParameters(
+                    _doc,
+                    selected,
+                    (pct, status) =>
+                    {
+                        Dispatcher.Invoke(() =>
+                        {
+                            BatchProgressBar.Value = pct;
+                            ProgressStatusTextBlock.Text = status;
+                        });
+                    });
+
+                // Удалить успешно удаленные из таблицы Step 2
+                for (int i = _stagedParams.Count - 1; i >= 0; i--)
+                {
+                    if (_stagedParams[i].IsSelected && !failedParams.Contains(_stagedParams[i].Name))
+                    {
+                        _stagedParams.RemoveAt(i);
+                    }
+                }
+                UpdateStagedParamsCount();
+
+                string msg = $"Пакетное удаление из {targetDocType} завершено!\n\n• Успешно удалено параметров: {deletedCount}";
+                if (failedParams.Count > 0)
+                {
+                    msg += $"\n• Не удалось удалить: {failedParams.Count} ({string.Join(", ", failedParams.Take(5))})";
+                }
+
+                MessageBox.Show(this, msg, "BIMBCC | Удаление параметров", MessageBoxButton.OK, MessageBoxImage.Information);
+                ProgressStatusTextBlock.Text = "Удаление параметров завершено.";
+                BatchProgressBar.Value = 100;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"Ошибка при пакетном удалении параметров:\n{ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                ProgressStatusTextBlock.Text = "Ошибка выполнения операции.";
+            }
+        }
+
         private void Cancel_Click(object sender, RoutedEventArgs e)
         {
             DialogResult = false;
