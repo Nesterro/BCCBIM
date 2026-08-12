@@ -1180,69 +1180,15 @@ namespace BCCPlugIn
             double tPrevFt,
             double tNextFt)
         {
-            Curve c = seg.GetCurve();
-            if (c == null) return 0.0;
+            if (seg == null || seg.GetCurve() == null) return 0.0;
 
-            Transform segTransform = GetSegmentTransform(seg);
-            XYZ p0 = segTransform.OfPoint(c.GetEndPoint(0));
-            XYZ p1 = segTransform.OfPoint(c.GetEndPoint(1));
+            // Чистая длина грани помещения (в футах), полученная от сегмента границы пространства
+            double innerLengthFt = seg.GetCurve().Length;
 
-            XYZ dir = (p1 - p0);
-            double dirLen = dir.GetLength();
-
-            if (dirLen < 0.001) return c.Length;
-
-            double ux = dir.X / dirLen;
-            double uy = dir.Y / dirLen;
-
-            double spaceInnerLengthFt = c.Length;
-
-            if (loop != null && loop.Count >= 3)
-            {
-                int loopCount = loop.Count;
-
-                // Находим предыдущий не-коллинеарный сегмент контура
-                BoundarySegment prevCornerSeg = null;
-                for (int k = 1; k < loopCount; k++)
-                {
-                    BoundarySegment candidate = loop[(segIndex - k + loopCount) % loopCount];
-                    if (candidate != null && !IsColinear(seg, candidate))
-                    {
-                        prevCornerSeg = candidate;
-                        break;
-                    }
-                }
-
-                // Находим следующий не-коллинеарный сегмент контура
-                BoundarySegment nextCornerSeg = null;
-                for (int k = 1; k < loopCount; k++)
-                {
-                    BoundarySegment candidate = loop[(segIndex + k) % loopCount];
-                    if (candidate != null && !IsColinear(seg, candidate))
-                    {
-                        nextCornerSeg = candidate;
-                        break;
-                    }
-                }
-
-                if (prevCornerSeg != null && nextCornerSeg != null)
-                {
-                    double tCorner1 = GetIntersectionParam2D(p0, ux, uy, prevCornerSeg);
-                    double tCorner2 = GetIntersectionParam2D(p0, ux, uy, nextCornerSeg);
-
-                    double span = Math.Abs(tCorner2 - tCorner1);
-                    if (span > 0.01 && span < dirLen + 10.0)
-                    {
-                        spaceInnerLengthFt = span;
-                    }
-                }
-            }
-
-            // Припуск до осей смежных стен
+            // Припуск до осей примыкающих стен: tPrev/2 + tNext/2
             double extraLengthFt = (tPrevFt / 2.0) + (tNextFt / 2.0);
-            double finalLengthFt = spaceInnerLengthFt + extraLengthFt;
 
-            return finalLengthFt;
+            return innerLengthFt + extraLengthFt;
         }
 
         private Element GetElementFromSegment(BoundarySegment seg)
