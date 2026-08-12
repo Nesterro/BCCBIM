@@ -303,6 +303,18 @@ namespace BCCPlugIn
                                             double coeffAdd = 1.0 + b1 + b2 + b3 + b4;
 
                                             // Заполнить параметры
+                                            double totalOpeningsWidthMm = 0;
+                                            if (boundElem != null && isWall)
+                                            {
+                                                totalOpeningsWidthMm = ProcessWallOpenings(boundElem, linkInst, space, roomNumber, roomName,
+                                                    cornerTypeStr, isCornerSpace, tempOutside, effectiveTempIn, symbol, seg, roomHeight,
+                                                    processDoors, processWindows, isInteriorWall, processInteriorWalls, processedKeys, ref placedCount);
+                                            }
+
+                                            double netLengthMm = (isWall && totalOpeningsWidthMm > 0)
+                                                ? Math.Max(100.0, lengthMm - totalOpeningsWidthMm)
+                                                : lengthMm;
+
                                             SetText(inst, P_ROOM_NUMBER,  roomNumber);
                                             SetText(inst, P_ROOM_NAME,    roomName);
                                             SetText(inst, P_CONSTR_LABEL, label);
@@ -311,7 +323,7 @@ namespace BCCPlugIn
 
                                             SetNumber(inst, P_TEMP_OUT,  tempOutside);
                                             SetNumber(inst, P_TEMP_IN,   effectiveTempIn);
-                                            SetNumber(inst, P_LENGTH,    lengthMm);
+                                            SetNumber(inst, P_LENGTH,    netLengthMm);
                                             SetNumber(inst, P_HEIGHT,    heightMm);
                                             SetNumber(inst, P_COEFF_N,   1); // Коэффициент n по умолчанию 1
                                             SetNumber(inst, P_COEFF_K,   0);
@@ -961,7 +973,7 @@ namespace BCCPlugIn
             }
         }
 
-        private void ProcessWallOpenings(
+        private double ProcessWallOpenings(
             Element wallElem,
             RevitLinkInstance linkInst,
             Space space,
@@ -981,6 +993,7 @@ namespace BCCPlugIn
             HashSet<string> processedKeys,
             ref int placedCount)
         {
+            double totalOpeningsWidthMm = 0;
             try
             {
                 Document doc = wallElem.Document;
@@ -1010,7 +1023,7 @@ namespace BCCPlugIn
                     })
                     .ToList();
 
-                if (openings.Count == 0) return;
+                if (openings.Count == 0) return 0;
 
                 BoundingBoxXYZ spaceBbox = space.get_BoundingBox(null);
                 Transform linkTransform = linkInst != null ? linkInst.GetTotalTransform() : Transform.Identity;
@@ -1069,7 +1082,6 @@ namespace BCCPlugIn
                         double b2 = isCornerSpace ? 0.05 : 0.00;
                         double b3 = 0.00;
                         double b4 = 0.00;
-                        double coeffAdd = 1.0 + b1 + b2 + b3 + b4;
 
                         SetText(inst, P_ROOM_NUMBER, roomNumber);
                         SetText(inst, P_ROOM_NAME, roomName);
@@ -1088,11 +1100,14 @@ namespace BCCPlugIn
                         SetNumber(inst, P_ADD_B3, b3);
                         SetNumber(inst, P_ADD_B4, b4);
 
+                        totalOpeningsWidthMm += lMm;
                         placedCount++;
                     }
                 }
             }
             catch { }
+
+            return totalOpeningsWidthMm;
         }
 
         private void GetConstructionDimensions(
@@ -1388,10 +1403,16 @@ namespace BCCPlugIn
             // Чистая длина грани помещения (в футах), полученная от сегмента границы пространства
             double innerLengthFt = seg.GetCurve().Length;
 
-            // Припуск до осей примыкающих стен: tPrev/2 + tNext/2
-            double extraLengthFt = (tPrevFt / 2.0) + (tNextFt / 2.0);
+            BoundarySegment prevSeg = (loop != null && segIndex >= 0 && segIndex < loop.Count) ? loop[(segIndex - 1 + loop.Count) % loop.Count] : null;
+            BoundarySegment nextSeg = (loop != null && segIndex >= 0 && segIndex < loop.Count) ? loop[(segIndex + 1) % loop.Count] : null;
 
-            return innerLengthFt + extraLengthFt;
+            bool prevColinear = IsColinear(seg, prevSeg);
+            bool nextColinear = IsColinear(seg, nextSeg);
+
+            double extraPrevFt = prevColinear ? 0.0 : (tPrevFt / 2.0);
+            double extraNextFt = nextColinear ? 0.0 : (tNextFt / 2.0);
+
+            return innerLengthFt + extraPrevFt + extraNextFt;
         }
 
         private Element GetElementFromSegment(BoundarySegment seg)
