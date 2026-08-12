@@ -223,13 +223,15 @@
                         <TextBlock Text="Обрабатываемые конструкции:"
                                    FontWeight="SemiBold" Foreground="#595959" Margin="0,0,0,10"/>
 
-                        <UniformGrid Columns="2" Rows="2">
-                            <CheckBox x:Name="WallsCheckBox" Content="🧱  Стены"
+                        <UniformGrid Columns="2" Rows="3">
+                            <CheckBox x:Name="ExteriorWallsCheckBox" Content="🧱  Наружные стены"
                                       IsChecked="True" Margin="0,0,0,8"/>
+                            <CheckBox x:Name="InteriorWallsCheckBox" Content="🧱  Внутренние стены"
+                                      IsChecked="False" Margin="0,0,0,8"/>
                             <CheckBox x:Name="FloorsCheckBox" Content="⬛  Перекрытия / полы"
                                       IsChecked="True" Margin="0,0,0,8"/>
                             <CheckBox x:Name="DoorsCheckBox" Content="🚪  Двери"
-                                      IsChecked="True"/>
+                                      IsChecked="True" Margin="0,0,0,8"/>
                             <CheckBox x:Name="WindowsCheckBox" Content="🪟  Окна"
                                       IsChecked="True"/>
                         </UniformGrid>
