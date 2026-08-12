@@ -471,6 +471,7 @@
                             <StackPanel Grid.Column="0" Orientation="Horizontal">
                                 <Button Content="Выделить все" Style="{StaticResource SecondaryButtonStyle}" Click="SelectAllStaged_Click" AutomationProperties.Name="Выделить все подготовленные параметры"/>
                                 <Button Content="Снять выбор" Style="{StaticResource SecondaryButtonStyle}" Click="DeselectAllStaged_Click" AutomationProperties.Name="Снять выделение со всех подготовленных параметров"/>
+                                <Button Content="Загрузить параметры модели" Style="{StaticResource SecondaryButtonStyle}" Foreground="#005FB8" BorderBrush="#005FB8" Click="LoadModelParams_Click" AutomationProperties.Name="Загрузить существующие параметры из модели"/>
                             </StackPanel>
 
                             <TextBlock Grid.Column="1" x:Name="StagedParamsCountTextBlock" Text="Подготовлено к записи: 0 параметров" VerticalAlignment="Center" HorizontalAlignment="Right" FontWeight="Bold" Foreground="#1B5E20"/>
@@ -617,10 +618,13 @@
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <Button Grid.Column="0" Content="Закрыть" Style="{StaticResource SecondaryButtonStyle}" Width="120" Margin="0" Click="Cancel_Click" AutomationProperties.Name="Закрыть окно"/>
-            <Button Grid.Column="2" x:Name="ExecuteButton" Content="ЗАПИСАТЬ ПОДГОТОВЛЕННЫЕ ПАРАМЕТРЫ В МОДЕЛЬ" Style="{StaticResource PrimaryButtonStyle}" Width="420" Click="Execute_Click" AutomationProperties.Name="Выполнить пакетную запись подготовленных параметров в модель"/>
+            <Button Grid.Column="0" Content="Закрыть" Style="{StaticResource SecondaryButtonStyle}" Width="110" Margin="0" Click="Cancel_Click" AutomationProperties.Name="Закрыть окно"/>
+            <Button Grid.Column="2" x:Name="DeleteButton" Content="УДАЛИТЬ ОТМЕЧЕННЫЕ ИЗ МОДЕЛИ" Style="{StaticResource SecondaryButtonStyle}" Foreground="#C91414" BorderBrush="#C91414" FontWeight="Bold" Height="40" Padding="14,0" Click="ExecuteDelete_Click" AutomationProperties.Name="Пакетное удаление отмеченных параметров из модели"/>
+            <Button Grid.Column="4" x:Name="ExecuteButton" Content="ЗАПИСАТЬ ПОДГОТОВЛЕННЫЕ ПАРАМЕТРЫ В МОДЕЛЬ" Style="{StaticResource PrimaryButtonStyle}" Height="40" Padding="16,0" Click="Execute_Click" AutomationProperties.Name="Выполнить пакетную запись подготовленных параметров в модель"/>
         </Grid>
     </Grid>
 </Window>
