@@ -237,100 +237,118 @@ namespace BCCPlugIn
 
                             bool isInteriorWall = IsInteriorWall(boundElem, wallKey, wallSpaceCountMap);
 
+                            // 1. Проверяем, надо ли ставить кубик для САМОЙ конструкции
+                            bool shouldPlaceSelfCube = false;
+
                             if (isWall)
                             {
-                                if (!isInteriorWall && !processExteriorWalls) continue;
-                                if (isInteriorWall  && !processInteriorWalls) continue;
+                                if (!isInteriorWall && processExteriorWalls) shouldPlaceSelfCube = true;
+                                if (isInteriorWall  && processInteriorWalls) shouldPlaceSelfCube = true;
+                            }
+                            else if (isFloor)
+                            {
+                                if (processFloors) shouldPlaceSelfCube = true;
+                            }
+                            else if (isDoor)
+                            {
+                                if (processDoors)
+                                {
+                                    if (!isInteriorWall && processExteriorWalls) shouldPlaceSelfCube = true;
+                                    if (isInteriorWall  && processInteriorWalls) shouldPlaceSelfCube = true;
+                                }
+                            }
+                            else if (isWindow)
+                            {
+                                if (processWindows) shouldPlaceSelfCube = true;
                             }
 
-                            if (isFloor  && !processFloors)  continue;
-                            if (isDoor   && !processDoors)   continue;
-                            if (isWindow && !processWindows) continue;
-
-                            if (!isWall && !isFloor && !isDoor && !isWindow) continue;
-
-                            // Ключ уникальности (с учётом линка)
+                            if (shouldPlaceSelfCube)
+                            {
+                                // Ключ уникальности (с учётом линка)
 #pragma warning disable CS0618
-                            string uniqueKey = (linkInst != null ? linkInst.Id.IntegerValue.ToString() + "_" : "") +
-                                               (boundElem != null ? boundElem.Id.IntegerValue.ToString() : seg.GetCurve().Evaluate(0.5, true).ToString());
+                                string uniqueKey = (linkInst != null ? linkInst.Id.IntegerValue.ToString() + "_" : "") +
+                                                   (boundElem != null ? boundElem.Id.IntegerValue.ToString() : seg.GetCurve().Evaluate(0.5, true).ToString());
 #pragma warning restore CS0618
-                            if (!processedKeys.Add(uniqueKey)) continue;
+                                if (processedKeys.Add(uniqueKey))
+                                {
+                                    // Вычислить точку размещения в координатах основной модели
+                                    XYZ placementPoint = GetPlacementPoint(boundElem, linkInst, space, seg, roomHeight);
+                                    if (placementPoint != null)
+                                    {
+                                        // Разместить экземпляр
+                                        FamilyInstance inst = _doc.Create.NewFamilyInstance(
+                                            placementPoint,
+                                            symbol,
+                                            Autodesk.Revit.DB.Structure.StructuralType.NonStructural);
 
-                            // Вычислить точку размещения в координатах основной модели
-                            XYZ placementPoint = GetPlacementPoint(boundElem, linkInst, space, seg, roomHeight);
-                            if (placementPoint == null) continue;
+                                        if (inst != null)
+                                        {
+                                            // Вычислить геометрические характеристики с припуском до осей смежных стен
+                                            double lengthMm  = 0;
+                                            double heightMm  = 0;
+                                            double areaSqM   = 0;
+                                            string label     = GetConstructionLabel(boundElem, cat);
+                                            string orient    = GetOrientation(boundElem, cat, seg);
 
-                            // Разместить экземпляр
-                            FamilyInstance inst = _doc.Create.NewFamilyInstance(
-                                placementPoint,
-                                symbol,
-                                Autodesk.Revit.DB.Structure.StructuralType.NonStructural);
+                                            if (boundElem != null)
+                                            {
+                                                GetConstructionDimensions(boundElem, cat, seg, prevSeg, nextSeg, loop, i, roomHeight,
+                                                    out lengthMm, out heightMm, out areaSqM);
+                                            }
+                                            else
+                                            {
+                                                Element prevElem = GetElementFromSegment(prevSeg);
+                                                Element nextElem = GetElementFromSegment(nextSeg);
+                                                double tPrevFt = GetWallThicknessFt(prevElem);
+                                                double tNextFt = GetWallThicknessFt(nextElem);
 
-                            if (inst == null) continue;
+                                                double calcLengthFt = GetSpaceCroppedWallLengthFt(seg, loop, i, tPrevFt, tNextFt);
+                                                lengthMm = calcLengthFt * 304.8;
+                                                heightMm = roomHeight * 304.8;
+                                                areaSqM  = (lengthMm / 1000.0) * (heightMm / 1000.0);
+                                            }
 
-                            // Вычислить геометрические характеристики с припуском до осей смежных стен
-                            double lengthMm  = 0;
-                            double heightMm  = 0;
-                            double areaSqM   = 0;
-                            string label     = GetConstructionLabel(boundElem, cat);
-                            string orient    = GetOrientation(boundElem, cat, seg);
+                                            // Расчёт надбавок
+                                            bool isExteriorElem = (isWall || isDoor || isWindow);
+                                            double b1 = GetB1OrientationAddon(orient);
+                                            double b2 = (isCornerSpace && isExteriorElem) ? 0.05 : 0.00;
+                                            double b3 = 0.00;
+                                            double b4 = 0.00;
+                                            double coeffAdd = 1.0 + b1 + b2 + b3 + b4;
 
-                            if (boundElem != null)
-                            {
-                                GetConstructionDimensions(boundElem, cat, seg, prevSeg, nextSeg, loop, i, roomHeight,
-                                    out lengthMm, out heightMm, out areaSqM);
+                                            // Заполнить параметры
+                                            SetText(inst, P_ROOM_NUMBER,  roomNumber);
+                                            SetText(inst, P_ROOM_NAME,    roomName);
+                                            SetText(inst, P_CONSTR_LABEL, label);
+                                            SetText(inst, P_ORIENTATION,  orient);
+                                            SetText(inst, P_CORNER_TYPE,  cornerTypeStr);
+
+                                            SetNumber(inst, P_TEMP_OUT,  tempOutside);
+                                            SetNumber(inst, P_TEMP_IN,   tempInside);
+                                            SetNumber(inst, P_LENGTH,    lengthMm);
+                                            SetNumber(inst, P_HEIGHT,    heightMm);
+                                            SetNumber(inst, P_AREA,      areaSqM);
+                                            SetNumber(inst, P_COEFF_N,   1); // Коэффициент n по умолчанию 1
+                                            SetNumber(inst, P_COEFF_K,   0);
+                                            SetNumber(inst, P_ADD_B1,    b1); // Надбавка b1 по ориентации
+                                            SetNumber(inst, P_ADD_B2,    b2); // Надбавка b2 (угловое помещение)
+                                            SetNumber(inst, P_ADD_B3,    b3);
+                                            SetNumber(inst, P_ADD_B4,    b4);
+                                            SetNumber(inst, P_COEFF_ADD, coeffAdd); // Коэффициент надбавки = 1 + b1 + b2 + b3 + b4
+                                            SetNumber(inst, P_HEAT_LOSS, 0);
+
+                                            placedCount++;
+                                        }
+                                    }
+                                }
                             }
-                            else
-                            {
-                                Element prevElem = GetElementFromSegment(prevSeg);
-                                Element nextElem = GetElementFromSegment(nextSeg);
-                                double tPrevFt = GetWallThicknessFt(prevElem);
-                                double tNextFt = GetWallThicknessFt(nextElem);
 
-                                double calcLengthFt = GetSpaceCroppedWallLengthFt(seg, loop, i, tPrevFt, tNextFt);
-                                lengthMm = calcLengthFt * 304.8;
-                                heightMm = roomHeight * 304.8;
-                                areaSqM  = (lengthMm / 1000.0) * (heightMm / 1000.0);
-                            }
-
-                            // Расчёт надбавок
-                            bool isExteriorElem = (isWall || isDoor || isWindow);
-                            double b1 = GetB1OrientationAddon(orient);
-                            double b2 = (isCornerSpace && isExteriorElem) ? 0.05 : 0.00;
-                            double b3 = 0.00;
-                            double b4 = 0.00;
-                            double coeffAdd = 1.0 + b1 + b2 + b3 + b4;
-
-                            // Заполнить параметры
-                            SetText(inst, P_ROOM_NUMBER,  roomNumber);
-                            SetText(inst, P_ROOM_NAME,    roomName);
-                            SetText(inst, P_CONSTR_LABEL, label);
-                            SetText(inst, P_ORIENTATION,  orient);
-                            SetText(inst, P_CORNER_TYPE,  cornerTypeStr);
-
-                            SetNumber(inst, P_TEMP_OUT,  tempOutside);
-                            SetNumber(inst, P_TEMP_IN,   tempInside);
-                            SetNumber(inst, P_LENGTH,    lengthMm);
-                            SetNumber(inst, P_HEIGHT,    heightMm);
-                            SetNumber(inst, P_AREA,      areaSqM);
-                            SetNumber(inst, P_COEFF_N,   1); // Коэффициент n по умолчанию 1
-                            SetNumber(inst, P_COEFF_K,   0);
-                            SetNumber(inst, P_ADD_B1,    b1); // Надбавка b1 по ориентации
-                            SetNumber(inst, P_ADD_B2,    b2); // Надбавка b2 (угловое помещение)
-                            SetNumber(inst, P_ADD_B3,    b3);
-                            SetNumber(inst, P_ADD_B4,    b4);
-                            SetNumber(inst, P_COEFF_ADD, coeffAdd); // Коэффициент надбавки = 1 + b1 + b2 + b3 + b4
-                            SetNumber(inst, P_HEAT_LOSS, 0);
-
-                            placedCount++;
-
-                            // Если обрабатываемый элемент — стена, и включена обработка дверей/окон,
-                            // ищем расположенные в ней двери и окна
+                            // 2. ВСЕГДА проверяем проёмы (окна и двери) в стене, независимо от того, ставился ли кубик для стены
                             if (boundElem != null && isWall && (processDoors || processWindows))
                             {
                                 ProcessWallOpenings(boundElem, linkInst, space, roomNumber, roomName, cornerTypeStr, isCornerSpace,
                                                     tempOutside, tempInside, symbol, seg, roomHeight,
-                                                    processDoors, processWindows, processedKeys, ref placedCount);
+                                                    processDoors, processWindows, isInteriorWall, processInteriorWalls, processedKeys, ref placedCount);
                             }
                         }
                     }
@@ -805,6 +823,8 @@ namespace BCCPlugIn
             double roomHeightFt,
             bool processDoors,
             bool processWindows,
+            bool isInteriorWall,
+            bool processInteriorWalls,
             HashSet<string> processedKeys,
             ref int placedCount)
         {
@@ -823,7 +843,17 @@ namespace BCCPlugIn
 #pragma warning restore CS0618
                         bool isD = (cId == (long)BuiltInCategory.OST_Doors);
                         bool isW = (cId == (long)BuiltInCategory.OST_Windows);
-                        return (isD && processDoors) || (isW && processWindows);
+
+                        if (isW && processWindows) return true; // Окна являются наружными проёмами, ставим всегда при включении
+
+                        if (isD && processDoors)
+                        {
+                            // Двери во внутренних стенах пропускаются, если не включены внутренние стены
+                            if (isInteriorWall && !processInteriorWalls) return false;
+                            return true;
+                        }
+
+                        return false;
                     })
                     .ToList();
 
