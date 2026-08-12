@@ -1141,40 +1141,8 @@ namespace BCCPlugIn
 
             try
             {
-                if (cat == BuiltInCategory.OST_Walls)
-                {
-                    Wall wall = elem as Wall;
-
-                    Element prevElem = GetElementFromSegment(prevSeg);
-                    Element nextElem = GetElementFromSegment(nextSeg);
-
-                    double tPrevFt = GetWallThicknessFt(prevElem);
-                    double tNextFt = GetWallThicknessFt(nextElem);
-
-                    double calcLengthFt = GetSpaceCroppedWallLengthFt(seg, loop, segIndex, tPrevFt, tNextFt);
-                    lengthMm = calcLengthFt * ft2mm;
-
-                    // Высота стены — строго в пределах высоты пространства (помещения)
-                    heightMm = roomHeightFt * ft2mm;
-
-                    areaSqM = (lengthMm / 1000.0) * (heightMm / 1000.0);
-                }
-                else if (cat == BuiltInCategory.OST_Floors ||
-                         cat == BuiltInCategory.OST_Ceilings ||
-                         cat == BuiltInCategory.OST_StructuralFoundation)
-                {
-                    Parameter areaParam = elem.get_Parameter(BuiltInParameter.HOST_AREA_COMPUTED);
-                    areaSqM = areaParam != null ? areaParam.AsDouble() * ft2m * ft2m : 0;
-
-                    // Длина/высота — из BBox
-                    BoundingBoxXYZ bb = elem.get_BoundingBox(null);
-                    if (bb != null)
-                    {
-                        lengthMm = Math.Abs(bb.Max.X - bb.Min.X) * ft2mm;
-                        heightMm = Math.Abs(bb.Max.Y - bb.Min.Y) * ft2mm;
-                    }
-                }
-                else // Двери, Окна
+                // 1. Двери и Окна (проемы)
+                if (cat == BuiltInCategory.OST_Doors || cat == BuiltInCategory.OST_Windows)
                 {
                     Parameter widthParam  = elem.get_Parameter(BuiltInParameter.DOOR_WIDTH)
                                          ?? elem.get_Parameter(BuiltInParameter.CASEWORK_WIDTH)
@@ -1183,18 +1151,56 @@ namespace BCCPlugIn
                                          ?? elem.get_Parameter(BuiltInParameter.CASEWORK_HEIGHT)
                                          ?? elem.get_Parameter(BuiltInParameter.WINDOW_HEIGHT);
 
-                    lengthMm = widthParam  != null ? widthParam.AsDouble()  * ft2mm : 0;
-                    heightMm = heightParam != null ? heightParam.AsDouble() * ft2mm : 0;
+                    lengthMm = (widthParam != null && widthParam.HasValue) ? widthParam.AsDouble() * ft2mm : 0;
+                    heightMm = (heightParam != null && heightParam.HasValue) ? heightParam.AsDouble() * ft2mm : 0;
 
                     if (lengthMm == 0 || heightMm == 0)
                     {
                         BoundingBoxXYZ bb = elem.get_BoundingBox(null);
                         if (bb != null)
                         {
-                            lengthMm = Math.Abs(bb.Max.X - bb.Min.X) * ft2mm;
-                            heightMm = Math.Abs(bb.Max.Z - bb.Min.Z) * ft2mm;
+                            double dx = Math.Abs(bb.Max.X - bb.Min.X);
+                            double dy = Math.Abs(bb.Max.Y - bb.Min.Y);
+                            double dz = Math.Abs(bb.Max.Z - bb.Min.Z);
+
+                            if (lengthMm == 0) lengthMm = Math.Max(dx, dy) * ft2mm;
+                            if (heightMm == 0) heightMm = dz * ft2mm;
                         }
                     }
+
+                    areaSqM = (lengthMm / 1000.0) * (heightMm / 1000.0);
+                }
+                // 2. Перекрытия, полы, потолки
+                else if (cat == BuiltInCategory.OST_Floors ||
+                         cat == BuiltInCategory.OST_Ceilings ||
+                         cat == BuiltInCategory.OST_StructuralFoundation)
+                {
+                    Parameter areaParam = elem.get_Parameter(BuiltInParameter.HOST_AREA_COMPUTED);
+                    areaSqM = areaParam != null ? areaParam.AsDouble() * ft2m * ft2m : 0;
+
+                    if (areaSqM == 0)
+                    {
+                        BoundingBoxXYZ bb = elem.get_BoundingBox(null);
+                        if (bb != null)
+                        {
+                            lengthMm = Math.Abs(bb.Max.X - bb.Min.X) * ft2mm;
+                            heightMm = Math.Abs(bb.Max.Y - bb.Min.Y) * ft2mm;
+                            areaSqM = (lengthMm / 1000.0) * (heightMm / 1000.0);
+                        }
+                    }
+                }
+                // 3. Все виды стен (обычные стены, витражи/фасады, стеновые панели) и линии границ
+                else
+                {
+                    Element prevElem = GetElementFromSegment(prevSeg);
+                    Element nextElem = GetElementFromSegment(nextSeg);
+
+                    double tPrevFt = GetWallThicknessFt(prevElem);
+                    double tNextFt = GetWallThicknessFt(nextElem);
+
+                    double calcLengthFt = GetSpaceCroppedWallLengthFt(seg, loop, segIndex, tPrevFt, tNextFt);
+                    lengthMm = calcLengthFt * ft2mm;
+                    heightMm = roomHeightFt * ft2mm;
 
                     areaSqM = (lengthMm / 1000.0) * (heightMm / 1000.0);
                 }
