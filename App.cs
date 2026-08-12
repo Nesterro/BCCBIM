@@ -249,17 +249,15 @@ namespace BCCPlugIn
                                         Margin = new System.Windows.Thickness(0)
                                     };
 
-                                    var imageCtrl = new System.Windows.Controls.Image
+                                    var redDot = new System.Windows.Shapes.Ellipse
                                     {
-                                        Source = logoImage,
-                                        Width = 14,
-                                        Height = 14,
-                                        Margin = new System.Windows.Thickness(0, 0, 4, 0),
+                                        Width = 7,
+                                        Height = 7,
+                                        Fill = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#C91414")),
+                                        Margin = new System.Windows.Thickness(0, 0, 5, 0),
                                         VerticalAlignment = System.Windows.VerticalAlignment.Center,
-                                        SnapsToDevicePixels = true,
-                                        UseLayoutRounding = true
+                                        SnapsToDevicePixels = true
                                     };
-                                    System.Windows.Media.RenderOptions.SetBitmapScalingMode(imageCtrl, System.Windows.Media.BitmapScalingMode.HighQuality);
 
                                     var textBlock = new System.Windows.Controls.TextBlock
                                     {
@@ -270,7 +268,7 @@ namespace BCCPlugIn
                                         Margin = new System.Windows.Thickness(0)
                                     };
 
-                                    stackPanel.Children.Add(imageCtrl);
+                                    stackPanel.Children.Add(redDot);
                                     stackPanel.Children.Add(textBlock);
 
                                     contentProp?.SetValue(btn, stackPanel);
