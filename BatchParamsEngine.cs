@@ -243,5 +243,162 @@ namespace BCCPlugIn
 
             return null;
         }
+
+        public static List<SharedParamItem> GetExistingDocumentParameters(Document doc)
+        {
+            List<SharedParamItem> list = new List<SharedParamItem>();
+            if (doc == null) return list;
+
+            if (doc.IsFamilyDocument)
+            {
+                FamilyManager famMgr = doc.FamilyManager;
+                foreach (FamilyParameter fp in famMgr.Parameters)
+                {
+                    if (fp == null) continue;
+                    list.Add(new SharedParamItem
+                    {
+                        Name = fp.Definition?.Name ?? "",
+                        Guid = fp.IsShared ? fp.GUID : Guid.Empty,
+                        GroupName = "Параметры семейства",
+                        IsInstance = fp.IsInstance,
+                        IsSelected = true
+                    });
+                }
+            }
+            else
+            {
+                BindingMap bindMap = doc.ParameterBindings;
+                DefinitionBindingMapIterator it = bindMap.ForwardIterator();
+                while (it.MoveNext())
+                {
+                    Definition def = it.Key;
+                    Binding binding = it.Current as Binding;
+
+                    if (def != null)
+                    {
+                        bool isInstance = (binding is InstanceBinding);
+                        Guid pGuid = Guid.Empty;
+                        if (def is ExternalDefinition extDef)
+                        {
+                            pGuid = extDef.GUID;
+                        }
+
+                        list.Add(new SharedParamItem
+                        {
+                            Name = def.Name,
+                            Guid = pGuid,
+                            GroupName = "Параметры проекта",
+                            Definition = def as ExternalDefinition,
+                            IsInstance = isInstance,
+                            IsSelected = true
+                        });
+                    }
+                }
+            }
+
+            return list.OrderBy(p => p.Name).ToList();
+        }
+
+        public static (int deletedCount, List<string> failedParams) ExecuteBatchDeleteParameters(
+            Document doc,
+            List<SharedParamItem> paramsToDelete,
+            Action<int, string> progressCallback)
+        {
+            if (doc == null || paramsToDelete == null || paramsToDelete.Count == 0)
+                return (0, new List<string>());
+
+            int deletedCount = 0;
+            List<string> failedParams = new List<string>();
+
+            int total = paramsToDelete.Count;
+
+            using (Transaction trans = new Transaction(doc, "BIMBCC Пакетное удаление параметров"))
+            {
+                trans.Start();
+
+                if (doc.IsFamilyDocument)
+                {
+                    FamilyManager famMgr = doc.FamilyManager;
+                    for (int i = 0; i < total; i++)
+                    {
+                        var item = paramsToDelete[i];
+                        double pct = ((double)(i + 1) / total) * 100;
+                        progressCallback?.Invoke((int)pct, $"Удаление из семейства ({i + 1}/{total}): {item.Name}...");
+
+                        FamilyParameter fp = famMgr.get_Parameter(item.Name);
+                        if (fp != null)
+                        {
+                            try
+                            {
+                                famMgr.RemoveParameter(fp);
+                                deletedCount++;
+                            }
+                            catch
+                            {
+                                failedParams.Add(item.Name);
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    BindingMap bindMap = doc.ParameterBindings;
+
+                    // 1. Поиск совпадений в BindingMap
+                    List<Definition> defsToRemove = new List<Definition>();
+                    DefinitionBindingMapIterator it = bindMap.ForwardIterator();
+                    while (it.MoveNext())
+                    {
+                        Definition def = it.Key;
+                        if (def != null && paramsToDelete.Any(p => string.Equals(p.Name, def.Name, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            defsToRemove.Add(def);
+                        }
+                    }
+
+                    for (int i = 0; i < defsToRemove.Count; i++)
+                    {
+                        Definition def = defsToRemove[i];
+                        double pct = ((double)(i + 1) / total) * 100;
+                        progressCallback?.Invoke((int)pct, $"Удаление привязки ({i + 1}/{total}): {def.Name}...");
+
+                        try
+                        {
+                            bool removed = bindMap.Remove(def);
+                            if (removed) deletedCount++;
+                        }
+                        catch
+                        {
+                            failedParams.Add(def.Name);
+                        }
+                    }
+
+                    // 2. Удаление объектов SharedParameterElement из документа
+                    try
+                    {
+                        FilteredElementCollector collector = new FilteredElementCollector(doc)
+                            .OfClass(typeof(SharedParameterElement));
+
+                        foreach (SharedParameterElement spe in collector.Cast<SharedParameterElement>())
+                        {
+                            if (paramsToDelete.Any(p => string.Equals(p.Name, spe.Name, StringComparison.OrdinalIgnoreCase) ||
+                                                       (p.Guid != Guid.Empty && spe.GuidValue == p.Guid)))
+                            {
+                                try
+                                {
+                                    doc.Delete(spe.Id);
+                                }
+                                catch { }
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                trans.Commit();
+            }
+
+            return (deletedCount, failedParams);
+        }
     }
 }
