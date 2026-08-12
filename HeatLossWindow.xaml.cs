@@ -13,10 +13,11 @@ namespace BCCPlugIn
         public double       TempOutside     { get; private set; }
         public double       TempInside      { get; private set; }
 
-        public bool ProcessWalls   => WallsCheckBox.IsChecked   == true;
-        public bool ProcessFloors  => FloorsCheckBox.IsChecked  == true;
-        public bool ProcessDoors   => DoorsCheckBox.IsChecked   == true;
-        public bool ProcessWindows => WindowsCheckBox.IsChecked == true;
+        public bool ProcessExteriorWalls => ExteriorWallsCheckBox?.IsChecked == true;
+        public bool ProcessInteriorWalls => InteriorWallsCheckBox?.IsChecked == true;
+        public bool ProcessFloors        => FloorsCheckBox?.IsChecked        == true;
+        public bool ProcessDoors         => DoorsCheckBox?.IsChecked         == true;
+        public bool ProcessWindows       => WindowsCheckBox?.IsChecked       == true;
 
         public bool OnlyActiveView => ActiveViewRadioButton?.IsChecked == true;
 
@@ -109,7 +110,7 @@ namespace BCCPlugIn
             }
 
             // Валидация: хотя бы одна конструкция
-            if (!ProcessWalls && !ProcessFloors && !ProcessDoors && !ProcessWindows)
+            if (!ProcessExteriorWalls && !ProcessInteriorWalls && !ProcessFloors && !ProcessDoors && !ProcessWindows)
             {
                 MessageBox.Show(this,
                     "Выберите хотя бы один тип обрабатываемых конструкций.",
