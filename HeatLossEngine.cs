@@ -74,11 +74,13 @@ namespace BCCPlugIn
             _typeCodeMap = new Dictionary<ElementId, string>();
             _prefixCounterMap = new Dictionary<string, int>();
 
+            // 1. Убедиться, что в семействе кубика есть все общие параметры и формулы
+            EnsureCubeFamilyParametersAndFormulas(symbol);
+
             using (Transaction tx = new Transaction(_doc, "BIMBCC Теплопотери — добавление параметров"))
             {
                 tx.Start();
                 EnsureProjectParameters();
-                EnsureCubeFamilyParametersAndFormulas(symbol);
                 tx.Commit();
             }
 
@@ -779,53 +781,128 @@ namespace BCCPlugIn
                 Document famDoc = _doc.EditFamily(family);
                 if (famDoc == null) return;
 
-                bool modified = false;
+                string originalSharedParamFile = _doc.Application.SharedParametersFilename;
+                string tempFile = System.IO.Path.GetTempFileName();
 
-                using (Transaction tx = new Transaction(famDoc, "BIMBCC — Добавление формул в семейство кубика"))
+                try
                 {
-                    tx.Start();
-                    FamilyManager famMgr = famDoc.FamilyManager;
+                    System.IO.File.WriteAllText(tempFile,
+                        "# This is a Revit shared parameter file.\r\n" +
+                        "# Do not edit manually.\r\n" +
+                        "*META\tVERSION\tMINVERSION\r\n" +
+                        "META\t2\t1\r\n" +
+                        "*GROUP\tID\tNAME\r\n" +
+                        "GROUP\t1\tBIMBCC\r\n" +
+                        "*PARAM\tGUID\tNAME\tDATATYPE\tDATACATEGORY\tGROUP\tVISIBLE\tDESCRIPTION\tUSERMODIFIABLE\tHIDEWHENNOVALUE\r\n");
 
-                    // Словарь формул для параметров
-                    Dictionary<string, string> formulas = new Dictionary<string, string>
+                    _doc.Application.SharedParametersFilename = tempFile;
+                    DefinitionFile defFile = _doc.Application.OpenSharedParameterFile();
+                    DefinitionGroup grp = defFile.Groups.get_Item("BIMBCC") ?? defFile.Groups.Create("BIMBCC");
+
+                    bool modified = false;
+
+                    using (Transaction tx = new Transaction(famDoc, "BIMBCC — Добавление параметров и формул в семейство кубика"))
                     {
-                        { P_AREA, $"({P_LENGTH} / 1000) * ({P_HEIGHT} / 1000)" },
-                        { P_COEFF_ADD, $"1 + {P_ADD_B1} + {P_ADD_B2} + {P_ADD_B3} + {P_ADD_B4}" },
-                        { P_HEAT_LOSS, $"({P_TEMP_IN} - {P_TEMP_OUT}) * {P_AREA} * {P_COEFF_N} * {P_COEFF_K} * {P_COEFF_ADD}" }
-                    };
+                        tx.Start();
+                        FamilyManager famMgr = famDoc.FamilyManager;
 
-                    foreach (var kvp in formulas)
-                    {
-                        string pName = kvp.Key;
-                        string pFormula = kvp.Value;
-
-                        FamilyParameter fp = famMgr.get_Parameter(pName);
-                        if (fp != null)
+                        // 1. Убедиться, что ВСЕ текстовые общие параметры добавлены в семейство
+                        foreach (string name in AllTextParams)
                         {
-                            try
+                            EnsureFamilyParameter(famMgr, grp, name, SpecTypeId.String.Text, ref modified);
+                        }
+
+                        // 2. Убедиться, что ВСЕ числовые общие параметры добавлены в семейство
+                        foreach (string name in AllNumberParams)
+                        {
+                            EnsureFamilyParameter(famMgr, grp, name, SpecTypeId.Number, ref modified);
+                        }
+
+                        // 3. Словарь формул для параметров кубика
+                        Dictionary<string, string> formulas = new Dictionary<string, string>
+                        {
+                            { P_AREA, $"([{P_LENGTH}] / 1000) * ([{P_HEIGHT}] / 1000)" },
+                            { P_COEFF_ADD, $"1 + [{P_ADD_B1}] + [{P_ADD_B2}] + [{P_ADD_B3}] + [{P_ADD_B4}]" },
+                            { P_HEAT_LOSS, $"([{P_TEMP_IN}] - [{P_TEMP_OUT}]) * [{P_AREA}] * [{P_COEFF_N}] * [{P_COEFF_K}] * [{P_COEFF_ADD}]" }
+                        };
+
+                        foreach (var kvp in formulas)
+                        {
+                            string pName = kvp.Key;
+                            string pFormula = kvp.Value;
+
+                            FamilyParameter fp = famMgr.get_Parameter(pName);
+                            if (fp != null)
                             {
-                                famMgr.SetFormula(fp, pFormula);
-                                modified = true;
-                            }
-                            catch (Exception ex)
-                            {
-                                System.Diagnostics.Debug.WriteLine($"[EnsureCubeFamilyFormulas] Error setting formula for {pName}: {ex.Message}");
+                                try
+                                {
+                                    famMgr.SetFormula(fp, pFormula);
+                                    modified = true;
+                                }
+                                catch (Exception ex)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"[EnsureCubeFamilyFormulas] Error setting formula for {pName}: {ex.Message}");
+                                }
                             }
                         }
+
+                        tx.Commit();
                     }
 
-                    tx.Commit();
+                    if (modified)
+                    {
+                        famDoc.LoadFamily(_doc, new CustomFamilyLoadOptions());
+                    }
                 }
-
-                if (modified)
+                finally
                 {
-                    famDoc.LoadFamily(_doc, new CustomFamilyLoadOptions());
+                    try
+                    {
+                        _doc.Application.SharedParametersFilename =
+                            string.IsNullOrEmpty(originalSharedParamFile) ? "" : originalSharedParamFile;
+                    }
+                    catch { }
+
+                    try { System.IO.File.Delete(tempFile); } catch { }
                 }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[EnsureCubeFamilyFormulas] Error: {ex.Message}");
             }
+        }
+
+        private static FamilyParameter EnsureFamilyParameter(FamilyManager famMgr, DefinitionGroup grp, string paramName, ForgeTypeId specTypeId, ref bool modified)
+        {
+            FamilyParameter fp = famMgr.get_Parameter(paramName);
+            if (fp != null) return fp;
+
+            try
+            {
+                Definition def = grp.Definitions.get_Item(paramName);
+                if (def == null)
+                {
+                    ExternalDefinitionCreationOptions extOpts = new ExternalDefinitionCreationOptions(paramName, specTypeId)
+                    {
+                        UserModifiable = true
+                    };
+                    def = grp.Definitions.Create(extOpts);
+                }
+
+                if (def is ExternalDefinition extDef)
+                {
+#pragma warning disable CS0618
+                    fp = famMgr.AddParameter(extDef, BuiltInParameterGroup.PG_DATA, isInstance: true);
+#pragma warning restore CS0618
+                    modified = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[EnsureFamilyParameter] Failed for {paramName}: {ex.Message}");
+            }
+
+            return fp;
         }
 
     public class CustomFamilyLoadOptions : IFamilyLoadOptions
