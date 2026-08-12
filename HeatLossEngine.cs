@@ -133,7 +133,7 @@ namespace BCCPlugIn
                 {
                     string roomNumber, roomName;
                     GetSpaceRoomNumberAndName(space, out roomNumber, out roomName);
-                    double roomHeight = space.UnboundedHeight; // футы
+                    double roomHeight = GetSpaceHeightFt(space); // футы
                     double effectiveTempIn = GetSpaceInternalTemperature(space, tempInside, ref tempFromSpaceCount, ref tempDefaultCount);
 
                     IList<IList<BoundarySegment>> boundaries =
@@ -1061,10 +1061,10 @@ namespace BCCPlugIn
 
                     if (worldPt == null) continue;
 
-                    // Проверка близости проёма к габаритам пространства (с допуском 3.2 фута / 1 м)
+                    // Проверка близости проёма к габаритам пространства (с допуском 5 футов / 1.5 м)
                     if (spaceBbox != null)
                     {
-                        double tol = 3.2;
+                        double tol = 5.0;
                         if (worldPt.X < spaceBbox.Min.X - tol || worldPt.X > spaceBbox.Max.X + tol ||
                             worldPt.Y < spaceBbox.Min.Y - tol || worldPt.Y > spaceBbox.Max.Y + tol ||
                             worldPt.Z < spaceBbox.Min.Z - tol || worldPt.Z > spaceBbox.Max.Z + tol)
@@ -1200,6 +1200,59 @@ namespace BCCPlugIn
                 }
             }
             catch { /* Оставляем нули */ }
+        }
+
+        private static double GetSpaceHeightFt(Space space)
+        {
+            if (space == null) return 9.84252; // 3.00 м по умолчанию
+
+            // 1. Попытка через объем и площадь (если включен расчет объемов в Revit)
+            try
+            {
+                if (space.Area > 0.001 && space.Volume > 0.001)
+                {
+                    double hCalc = space.Volume / space.Area;
+                    if (hCalc >= 6.5 && hCalc <= 25.0) // От 2.0 м до 7.6 м
+                        return hCalc;
+                }
+            }
+            catch { }
+
+            // 2. Попытка через LimitOffset - BaseOffset
+            try
+            {
+                double limitOffset = space.LimitOffset;
+                double baseOffset = space.BaseOffset;
+                double hOffset = limitOffset - baseOffset;
+                if (hOffset >= 6.5 && hOffset <= 25.0)
+                    return hOffset;
+            }
+            catch { }
+
+            // 3. Попытка через параметр ROOM_HEIGHT
+            try
+            {
+                Parameter pHeight = space.get_Parameter(BuiltInParameter.ROOM_HEIGHT);
+                if (pHeight != null && pHeight.HasValue)
+                {
+                    double hVal = pHeight.AsDouble();
+                    if (hVal >= 6.5 && hVal <= 25.0)
+                        return hVal;
+                }
+            }
+            catch { }
+
+            // 4. Попытка через UnboundedHeight (если оно в разумных пределах <= 25 футов / 7.6 м)
+            try
+            {
+                double uHeight = space.UnboundedHeight;
+                if (uHeight >= 6.5 && uHeight <= 25.0)
+                    return uHeight;
+            }
+            catch { }
+
+            // 5. Стандартная высота помещения по умолчанию: 3.00 м (9.84252 фута)
+            return 9.84252;
         }
 
         private static double GetSpaceInternalTemperature(Space space, double defaultTempIn, ref int fromSpaceCount, ref int defaultCount)
