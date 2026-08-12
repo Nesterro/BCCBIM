@@ -126,11 +126,15 @@ namespace BCCPlugIn
                 // Построить карту количества пространств, примыкающих к каждому ограждению
                 Dictionary<string, int> wallSpaceCountMap = BuildWallSpaceCountMap(spaces, boundaryOpts);
 
+                int tempFromSpaceCount = 0;
+                int tempDefaultCount = 0;
+
                 foreach (Space space in spaces)
                 {
                     string roomNumber, roomName;
                     GetSpaceRoomNumberAndName(space, out roomNumber, out roomName);
                     double roomHeight = space.UnboundedHeight; // футы
+                    double effectiveTempIn = GetSpaceInternalTemperature(space, tempInside, ref tempFromSpaceCount, ref tempDefaultCount);
 
                     IList<IList<BoundarySegment>> boundaries =
                         space.GetBoundarySegments(boundaryOpts);
@@ -195,35 +199,10 @@ namespace BCCPlugIn
                             BoundarySegment nextSeg = loop[(i + 1) % loopCount];
 
                             ElementId boundElemId = seg.ElementId;
-                            if (boundElemId == ElementId.InvalidElementId) continue;
+                            RevitLinkInstance linkInst = (_doc.GetElement(boundElemId) is RevitLinkInstance rvtLink) ? rvtLink : null;
+                            Element boundElem = GetElementFromSegment(seg);
 
-                            Element boundElem = null;
-                            RevitLinkInstance linkInst = null;
-
-                            Element hostElem = _doc.GetElement(boundElemId);
-                            if (hostElem is RevitLinkInstance rvtLink)
-                            {
-                                linkInst = rvtLink;
-                                Document linkedDoc = rvtLink.GetLinkDocument();
-                                if (linkedDoc != null)
-                                {
-                                    try
-                                    {
-                                        ElementId linkedElemId = seg.LinkElementId;
-                                        if (linkedElemId != null && linkedElemId != ElementId.InvalidElementId)
-                                        {
-                                            boundElem = linkedDoc.GetElement(linkedElemId);
-                                        }
-                                    }
-                                    catch { }
-                                }
-                            }
-                            else
-                            {
-                                boundElem = hostElem;
-                            }
-
-                            // Если элемент равен null (например, разделитель помещений), вычисляем категорию как Wall по умолчанию
+                            // Если элемент равен null, вычисляем категорию как Wall по умолчанию
                             BuiltInCategory cat = boundElem != null ? GetBuiltInCategory(boundElem) : BuiltInCategory.OST_Walls;
 
                             bool isWall    = (cat == BuiltInCategory.OST_Walls);
@@ -234,10 +213,13 @@ namespace BCCPlugIn
                             bool isDoor    = (cat == BuiltInCategory.OST_Doors);
                             bool isWindow  = (cat == BuiltInCategory.OST_Windows);
 
-                            string wallKey = (seg.LinkElementId != null && seg.LinkElementId != ElementId.InvalidElementId)
-                                ? seg.ElementId.IntegerValue.ToString() + "_" + seg.LinkElementId.IntegerValue.ToString()
-                                : seg.ElementId.IntegerValue.ToString();
-
+                            string wallKey = (boundElem != null && isWall)
+#pragma warning disable CS0618
+                                ? ((seg.LinkElementId != null && seg.LinkElementId != ElementId.InvalidElementId)
+                                    ? seg.ElementId.IntegerValue.ToString() + "_" + seg.LinkElementId.IntegerValue.ToString()
+                                    : seg.ElementId.IntegerValue.ToString())
+#pragma warning restore CS0618
+                                : null;
                             bool isInteriorWall = IsInteriorWall(boundElem, wallKey, wallSpaceCountMap);
 
                             // 1. Проверяем, надо ли ставить кубик для САМОЙ конструкции
@@ -267,10 +249,11 @@ namespace BCCPlugIn
 
                             if (shouldPlaceSelfCube)
                             {
-                                // Ключ уникальности (с учётом линка)
+                                // Ключ уникальности (с учётом помещения и индекса сегмента)
 #pragma warning disable CS0618
-                                string uniqueKey = (linkInst != null ? linkInst.Id.IntegerValue.ToString() + "_" : "") +
-                                                   (boundElem != null ? boundElem.Id.IntegerValue.ToString() : seg.GetCurve().Evaluate(0.5, true).ToString());
+                                string uniqueKey = space.Id.IntegerValue.ToString() + "_" +
+                                                   (linkInst != null ? linkInst.Id.IntegerValue.ToString() + "_" : "") +
+                                                   (boundElem != null ? boundElem.Id.IntegerValue.ToString() + "_" + i.ToString() : seg.GetCurve().Evaluate(0.5, true).ToString());
 #pragma warning restore CS0618
                                 if (processedKeys.Add(uniqueKey))
                                 {
@@ -327,7 +310,7 @@ namespace BCCPlugIn
                                             SetText(inst, P_CORNER_TYPE,  cornerTypeStr);
 
                                             SetNumber(inst, P_TEMP_OUT,  tempOutside);
-                                            SetNumber(inst, P_TEMP_IN,   tempInside);
+                                            SetNumber(inst, P_TEMP_IN,   effectiveTempIn);
                                             SetNumber(inst, P_LENGTH,    lengthMm);
                                             SetNumber(inst, P_HEIGHT,    heightMm);
                                             SetNumber(inst, P_COEFF_N,   1); // Коэффициент n по умолчанию 1
@@ -615,7 +598,7 @@ namespace BCCPlugIn
         }
 
         // ───────────────────────────────────────────────────────────────────
-        // Вторая транзакция: Запись k и расчет Q = (t_in - t_out)*S*n*k*CoeffAdd
+        // Вторая транзакция: Создание типов конструкций в семействе кубика и запись k на ТИП
         // ───────────────────────────────────────────────────────────────────
         public int ApplyCoefficientsAndCalculateHeatLoss(Dictionary<string, double> coeffKMap)
         {
@@ -626,40 +609,71 @@ namespace BCCPlugIn
                 .Where(fi => fi.LookupParameter(P_CONSTR_LABEL) != null)
                 .ToList();
 
+            if (cubes.Count == 0 || coeffKMap == null || coeffKMap.Count == 0) return 0;
+
+            FamilySymbol baseSymbol = cubes.FirstOrDefault()?.Symbol;
+            Family family = baseSymbol?.Family;
+            if (family == null) return 0;
+
             int updatedCount = 0;
 
-            using (Transaction tx = new Transaction(_doc, "BIMBCC | Запись коэффициентов и расчёт теплопотерь"))
+            using (Transaction tx = new Transaction(_doc, "BIMBCC | Создание типов кубика и запись коэффициентов k на ТИП"))
             {
                 tx.Start();
 
-                foreach (FamilyInstance cube in cubes)
+                // 1. Создать типоразмеры семейства кубика для каждого типа конструкции и задать k на ТИП
+                Dictionary<string, FamilySymbol> typeSymbolMap = new Dictionary<string, FamilySymbol>();
+
+                foreach (var kvp in coeffKMap)
                 {
-                    string label = GetText(cube, P_CONSTR_LABEL);
-                    if (string.IsNullOrEmpty(label)) continue;
+                    string label = kvp.Key;
+                    double coeffK = kvp.Value;
+                    string typeName = $"{label}";
 
-                    if (coeffKMap.TryGetValue(label, out double coeffK))
+                    FamilySymbol existingSymbol = family.GetFamilySymbolIds()
+                        .Select(id => _doc.GetElement(id) as FamilySymbol)
+                        .FirstOrDefault(s => s != null && s.Name == typeName);
+
+                    if (existingSymbol == null)
                     {
-                        // 1. Записать коэффициент теплопередачи k
-                        SetNumber(cube, P_COEFF_K, coeffK);
+                        try
+                        {
+                            existingSymbol = baseSymbol.Duplicate(typeName) as FamilySymbol;
+                        }
+                        catch
+                        {
+                            existingSymbol = baseSymbol;
+                        }
+                    }
 
-                        // 2. Считать параметры для расчёта Q
-                        double tOut = GetNumber(cube, P_TEMP_OUT);
-                        double tIn = GetNumber(cube, P_TEMP_IN);
-                        double area = GetNumber(cube, P_AREA);
-                        double n = GetNumber(cube, P_COEFF_N);
-                        double coeffAdd = GetNumber(cube, P_COEFF_ADD);
+                    if (existingSymbol != null)
+                    {
+                        if (!existingSymbol.IsActive) existingSymbol.Activate();
 
-                        // Формула: Q = (t_in - t_out) * Area * n * k * CoeffAdd
-                        double deltaT = tIn - tOut;
-                        double qHeatLoss = deltaT * area * n * coeffK * coeffAdd;
-
-                        // 3. Записать итоговые теплопотери Q (Вт)
-                        SetNumber(cube, P_HEAT_LOSS, Math.Round(qHeatLoss, 2));
-
-                        updatedCount++;
+                        Parameter pK = existingSymbol.LookupParameter(P_COEFF_K);
+                        if (pK != null && !pK.IsReadOnly)
+                        {
+                            pK.Set(coeffK);
+                        }
+                        typeSymbolMap[label] = existingSymbol;
                     }
                 }
 
+                // 2. Назначить созданный типоразмер каждому кубику в зависимости от его обозначения конструкции
+                foreach (FamilyInstance cube in cubes)
+                {
+                    string label = GetText(cube, P_CONSTR_LABEL);
+                    if (!string.IsNullOrEmpty(label) && typeSymbolMap.TryGetValue(label, out FamilySymbol targetSymbol))
+                    {
+                        if (cube.Symbol.Id != targetSymbol.Id)
+                        {
+                            cube.Symbol = targetSymbol;
+                            updatedCount++;
+                        }
+                    }
+                }
+
+                _doc.Regenerate();
                 tx.Commit();
             }
 
@@ -793,7 +807,8 @@ namespace BCCPlugIn
                         // 2. Убедиться, что ВСЕ числовые общие параметры добавлены в семейство
                         foreach (string name in AllNumberParams)
                         {
-                            EnsureFamilyParameter(famMgr, grp, name, SpecTypeId.Number, ref modified);
+                            bool isInstanceParam = (name != P_COEFF_K); // P_COEFF_K — параметр ТИПА
+                            EnsureFamilyParameter(famMgr, grp, name, SpecTypeId.Number, ref modified, isInstanceParam);
                         }
 
                         // 3. Словарь формул для параметров кубика
@@ -850,7 +865,7 @@ namespace BCCPlugIn
             }
         }
 
-        private static FamilyParameter EnsureFamilyParameter(FamilyManager famMgr, DefinitionGroup grp, string paramName, ForgeTypeId specTypeId, ref bool modified)
+        private static FamilyParameter EnsureFamilyParameter(FamilyManager famMgr, DefinitionGroup grp, string paramName, ForgeTypeId specTypeId, ref bool modified, bool isInstance = true)
         {
             FamilyParameter fp = famMgr.get_Parameter(paramName);
             if (fp != null) return fp;
@@ -872,7 +887,7 @@ namespace BCCPlugIn
                 if (def is ExternalDefinition extDef)
                 {
 #pragma warning disable CS0618
-                    fp = famMgr.AddParameter(extDef, BuiltInParameterGroup.PG_DATA, isInstance: true);
+                    fp = famMgr.AddParameter(extDef, BuiltInParameterGroup.PG_DATA, isInstance: isInstance);
 #pragma warning restore CS0618
                     modified = true;
                 }
@@ -1115,11 +1130,8 @@ namespace BCCPlugIn
                     double calcLengthFt = GetSpaceCroppedWallLengthFt(seg, loop, segIndex, tPrevFt, tNextFt);
                     lengthMm = calcLengthFt * ft2mm;
 
-                    // Высота стены
-                    Parameter hParam = wall != null ? wall.get_Parameter(BuiltInParameter.WALL_USER_HEIGHT_PARAM) : null;
-                    heightMm = (hParam != null && hParam.HasValue && hParam.AsDouble() > 0)
-                        ? hParam.AsDouble() * ft2mm
-                        : roomHeightFt * ft2mm;
+                    // Высота стены — строго в пределах высоты пространства (помещения)
+                    heightMm = roomHeightFt * ft2mm;
 
                     areaSqM = (lengthMm / 1000.0) * (heightMm / 1000.0);
                 }
@@ -1164,6 +1176,67 @@ namespace BCCPlugIn
                 }
             }
             catch { /* Оставляем нули */ }
+        }
+
+        private static double GetSpaceInternalTemperature(Space space, double defaultTempIn, ref int fromSpaceCount, ref int defaultCount)
+        {
+            if (space != null)
+            {
+                // 1. Поиск встроенных параметров температуры нагрева пространства (Расчетная температура нагрева / Design Heating Temperature)
+                try
+                {
+                    foreach (Parameter p in space.Parameters)
+                    {
+                        if (p != null && p.Definition != null)
+                        {
+                            string pName = p.Definition.Name.ToLower();
+                            if (pName.Contains("нагрев") || pName.Contains("heating") || pName.Contains("отопл"))
+                            {
+                                if (p.HasValue && p.StorageType == StorageType.Double)
+                                {
+                                    double val = p.AsDouble();
+                                    if (val > 100 && val < 400) val -= 273.15; // Перевод из Кельвинов в Цельсии
+                                    if (val > -50 && val < 100 && val != 0)
+                                    {
+                                        fromSpaceCount++;
+                                        return Math.Round(val, 1);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                catch { }
+
+                // 2. Параметры пространств
+                string[] paramNames = new[] { "BCC_HL_Температура внутреннего воздуха", "Температура внутреннего воздуха", "t_вн", "Температура воздуха" };
+                foreach (string pName in paramNames)
+                {
+                    Parameter p = space.LookupParameter(pName);
+                    if (p != null && p.HasValue)
+                    {
+                        double val = 0;
+                        if (p.StorageType == StorageType.Double)
+                        {
+                            val = p.AsDouble();
+                            if (val > 100 && val < 400) val -= 273.15;
+                        }
+                        else if (p.StorageType == StorageType.String && double.TryParse(p.AsString().Replace(',', '.'), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double parsedVal))
+                        {
+                            val = parsedVal;
+                        }
+
+                        if (val > -50 && val < 100 && val != 0)
+                        {
+                            fromSpaceCount++;
+                            return Math.Round(val, 1);
+                        }
+                    }
+                }
+            }
+
+            defaultCount++;
+            return defaultTempIn;
         }
 
         private static Dictionary<string, int> BuildWallSpaceCountMap(List<Space> spaces, SpatialElementBoundaryOptions boundaryOpts)
