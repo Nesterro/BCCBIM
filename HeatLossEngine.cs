@@ -78,6 +78,7 @@ namespace BCCPlugIn
             {
                 tx.Start();
                 EnsureProjectParameters();
+                EnsureCubeFamilyParametersAndFormulas(symbol);
                 tx.Commit();
             }
 
@@ -767,6 +768,81 @@ namespace BCCPlugIn
                 try { System.IO.File.Delete(tempFile); } catch { }
             }
         }
+
+        private void EnsureCubeFamilyParametersAndFormulas(FamilySymbol symbol)
+        {
+            if (symbol == null || symbol.Family == null || !symbol.Family.IsEditable) return;
+
+            try
+            {
+                Family family = symbol.Family;
+                Document famDoc = _doc.EditFamily(family);
+                if (famDoc == null) return;
+
+                bool modified = false;
+
+                using (Transaction tx = new Transaction(famDoc, "BIMBCC — Добавление формул в семейство кубика"))
+                {
+                    tx.Start();
+                    FamilyManager famMgr = famDoc.FamilyManager;
+
+                    // Словарь формул для параметров
+                    Dictionary<string, string> formulas = new Dictionary<string, string>
+                    {
+                        { P_AREA, $"({P_LENGTH} / 1000) * ({P_HEIGHT} / 1000)" },
+                        { P_COEFF_ADD, $"1 + {P_ADD_B1} + {P_ADD_B2} + {P_ADD_B3} + {P_ADD_B4}" },
+                        { P_HEAT_LOSS, $"({P_TEMP_IN} - {P_TEMP_OUT}) * {P_AREA} * {P_COEFF_N} * {P_COEFF_K} * {P_COEFF_ADD}" }
+                    };
+
+                    foreach (var kvp in formulas)
+                    {
+                        string pName = kvp.Key;
+                        string pFormula = kvp.Value;
+
+                        FamilyParameter fp = famMgr.get_Parameter(pName);
+                        if (fp != null)
+                        {
+                            try
+                            {
+                                famMgr.SetFormula(fp, pFormula);
+                                modified = true;
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[EnsureCubeFamilyFormulas] Error setting formula for {pName}: {ex.Message}");
+                            }
+                        }
+                    }
+
+                    tx.Commit();
+                }
+
+                if (modified)
+                {
+                    famDoc.LoadFamily(_doc, new CustomFamilyLoadOptions());
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[EnsureCubeFamilyFormulas] Error: {ex.Message}");
+            }
+        }
+
+    public class CustomFamilyLoadOptions : IFamilyLoadOptions
+    {
+        public bool OnFamilyFound(bool familyInUse, out bool overwriteParameterValues)
+        {
+            overwriteParameterValues = true;
+            return true;
+        }
+
+        public bool OnSharedFamilyFound(Family sharedFamily, bool familyInUse, out FamilySource source, out bool overwriteParameterValues)
+        {
+            source = FamilySource.Family;
+            overwriteParameterValues = true;
+            return true;
+        }
+    }
 
         // ───────────────────────────────────────────────────────────────────
         // Вспомогательные: геометрия
