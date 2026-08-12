@@ -481,6 +481,8 @@ namespace BCCPlugIn
                         if (sf != null)
                         {
                             ScheduleField addedField = def.AddField(sf);
+                            addedField.HorizontalAlignment = ScheduleHorizontalAlignment.Center; // Выравнивание столбцов по центру
+
                             if (paramName == P_AREA || paramName == P_HEAT_LOSS)
                             {
                                 addedField.DisplayType = ScheduleFieldDisplayType.Totals; // Вычисление итогов по площади и теплопотерям!
@@ -488,7 +490,7 @@ namespace BCCPlugIn
                         }
                     }
 
-                    // Сортировка: Номер (с заголовком) → Имя помещения → Обозначение конструкции → Площадь конструкции
+                    // Сортировка: Номер (с заголовком и нижним колонтитулом "Только итого") → Имя помещения → Обозначение конструкции → Площадь конструкции
                     def.ClearSortGroupFields();
 
                     ScheduleField fieldRoomNum = null;
@@ -505,11 +507,14 @@ namespace BCCPlugIn
                         else if (fn == P_AREA) fieldArea = f;
                     }
 
-                    // 1. По номеру помещения с заголовком
+                    // 1. По номеру помещения с заголовком и нижним колонтитулом ("Только итого")
                     if (fieldRoomNum != null)
                     {
                         ScheduleSortGroupField sort1 = new ScheduleSortGroupField(fieldRoomNum.FieldId);
-                        sort1.ShowHeader = true; // С заголовком!
+                        sort1.ShowHeader = true;       // Заголовок
+                        sort1.ShowFooter = true;       // Нижний колонтитул
+                        sort1.ShowFooterTitle = false; // Без названия заглавия в колонтитуле
+                        sort1.ShowFooterCount = false; // Без количества элементов ("Только итого")
                         def.AddSortGroupField(sort1);
                     }
 
