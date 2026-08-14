@@ -125,7 +125,22 @@ namespace BCCPlugIn
                 paramPanel.AddItem(batchParamsButtonData);
 
                 // ----------------------------------------------------
-                // 4. Panel "Сервер"
+                // 4. Panel "Виды"
+                // ----------------------------------------------------
+                string viewsPanelName = "Виды";
+                RibbonPanel viewsPanel = application.GetRibbonPanels(tabName).FirstOrDefault(p => p.Name == viewsPanelName)
+                                      ?? application.CreateRibbonPanel(tabName, viewsPanelName);
+
+                PushButtonData filterCopyButtonData = new PushButtonData("BccFilterCopyButton", "Копирование\nфильтров", thisAssemblyPath, typeof(FilterCopyCommand).FullName)
+                {
+                    ToolTip = "Пакетное копирование фильтров видов и переопределений графики между видами и шаблонами видов.",
+                    LargeImage = getIcon("filter_copy_icon", false),
+                    Image = getIcon("filter_copy_icon", true)
+                };
+                viewsPanel.AddItem(filterCopyButtonData);
+
+                // ----------------------------------------------------
+                // 5. Panel "Сервер"
                 // ----------------------------------------------------
                 string serverPanelName = "Сервер";
                 RibbonPanel serverPanel = application.GetRibbonPanels(tabName).FirstOrDefault(p => p.Name == serverPanelName)
