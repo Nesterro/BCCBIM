@@ -30,6 +30,47 @@
             </Style.Triggers>
         </Style>
 
+        <!-- Dark ComboBox Template for High Contrast Header & Dropdown -->
+        <ControlTemplate x:Key="DarkComboBoxTemplate" TargetType="ComboBox">
+            <Grid x:Name="MainGrid">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="24"/>
+                </Grid.ColumnDefinitions>
+                <Border x:Name="Border" Grid.ColumnSpan="2" Background="#2D2D30" BorderBrush="#434346" BorderThickness="1" CornerRadius="3"/>
+                <ContentPresenter Grid.Column="0" IsHitTestVisible="False" Content="{TemplateBinding SelectionBoxItem}"
+                                  ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                  ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                  Margin="8,6,4,6" VerticalAlignment="Center" HorizontalAlignment="Left">
+                    <ContentPresenter.Resources>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#FFFFFF"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                        </Style>
+                    </ContentPresenter.Resources>
+                </ContentPresenter>
+                <Path x:Name="Arrow" Grid.Column="1" Fill="#E0E0E0" HorizontalAlignment="Center" VerticalAlignment="Center" Data="M 0 0 L 4 4 L 8 0 Z" Margin="0,0,4,0"/>
+                <ToggleButton x:Name="ToggleButton" Grid.ColumnSpan="2" Background="Transparent" BorderThickness="0"
+                              Focusable="False" IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"/>
+                <Popup x:Name="PART_Popup" AllowsTransparency="True" Grid.ColumnSpan="2" Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}">
+                    <Border x:Name="DropDownBorder" Background="#252526" BorderBrush="#434346" BorderThickness="1" Margin="0,2,0,0" CornerRadius="3">
+                        <ScrollViewer Margin="2" SnapsToDevicePixels="True">
+                            <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained"/>
+                        </ScrollViewer>
+                    </Border>
+                </Popup>
+            </Grid>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter TargetName="Border" Property="BorderBrush" Value="#007ACC"/>
+                    <Setter TargetName="Arrow" Property="Fill" Value="#007ACC"/>
+                </Trigger>
+                <Trigger Property="IsFocused" Value="True">
+                    <Setter TargetName="Border" Property="BorderBrush" Value="#007ACC"/>
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+
         <!-- ComboBox & ComboBoxItem High Contrast Styles -->
         <Style TargetType="ComboBoxItem">
             <Setter Property="Background" Value="#252526"/>
@@ -50,12 +91,8 @@
         </Style>
 
         <Style TargetType="ComboBox">
-            <Setter Property="Background" Value="#2D2D30"/>
+            <Setter Property="Template" Value="{StaticResource DarkComboBoxTemplate}"/>
             <Setter Property="Foreground" Value="#FFFFFF"/>
-            <Setter Property="BorderBrush" Value="#434346"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="6,4"/>
-            <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
 
         <Style TargetType="CheckBox">
