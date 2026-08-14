@@ -73,6 +73,14 @@ namespace BCCPlugIn
 
             // Загрузить фильтры выбранного вида
             _filters = _engine.GetViewFilters(selectedSource.ViewId);
+            if (_filters != null)
+            {
+                foreach (var f in _filters)
+                {
+                    f.PropertyChanged -= Item_PropertyChanged;
+                    f.PropertyChanged += Item_PropertyChanged;
+                }
+            }
             FiltersDataGrid.ItemsSource = _filters;
             _filtersCollectionView = CollectionViewSource.GetDefaultView(_filters);
             if (_filtersCollectionView != null)
@@ -82,6 +90,14 @@ namespace BCCPlugIn
 
             // Загрузить целевые виды (исключая выбранный исходный)
             _targetViews = _engine.GetTargetViews(selectedSource.ViewId);
+            if (_targetViews != null)
+            {
+                foreach (var t in _targetViews)
+                {
+                    t.PropertyChanged -= Item_PropertyChanged;
+                    t.PropertyChanged += Item_PropertyChanged;
+                }
+            }
             TargetsDataGrid.ItemsSource = _targetViews;
             _targetsCollectionView = CollectionViewSource.GetDefaultView(_targetViews);
             if (_targetsCollectionView != null)
@@ -91,6 +107,64 @@ namespace BCCPlugIn
 
             UpdateStatusText();
         }
+
+        private void Item_PropertyChanged(object sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(FilterItem.IsSelected) || e.PropertyName == nameof(TargetViewItem.IsSelected))
+            {
+                UpdateStatusText();
+            }
+        }
+
+        #region Multi-Row CheckBox Toggling
+
+        private void FilterCheckBox_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is CheckBox cb && cb.DataContext is FilterItem currentItem)
+            {
+                bool newState = cb.IsChecked ?? false;
+                var selectedRows = FiltersDataGrid.SelectedItems.Cast<FilterItem>().ToList();
+
+                if (selectedRows.Count > 1 && selectedRows.Contains(currentItem))
+                {
+                    foreach (var item in selectedRows)
+                    {
+                        item.IsSelected = newState;
+                    }
+                }
+                else
+                {
+                    currentItem.IsSelected = newState;
+                }
+
+                UpdateStatusText();
+            }
+        }
+
+        private void TargetCheckBox_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is CheckBox cb && cb.DataContext is TargetViewItem currentItem)
+            {
+                bool newState = cb.IsChecked ?? false;
+                var selectedRows = TargetsDataGrid.SelectedItems.Cast<TargetViewItem>().ToList();
+
+                if (selectedRows.Count > 1 && selectedRows.Contains(currentItem))
+                {
+                    foreach (var item in selectedRows)
+                    {
+                        item.IsSelected = newState;
+                    }
+                }
+                else
+                {
+                    currentItem.IsSelected = newState;
+                }
+
+                UpdateStatusText();
+            }
+        }
+
+        #endregion
 
         #region Live Search Filters & Targets
 
@@ -206,6 +280,9 @@ namespace BCCPlugIn
 
             StatusTextBlock.Text = $"Выбрано фильтров: {selectedFilterCount} | Целевых видов: {selectedTargetCount}";
             CopyButton.IsEnabled = (selectedFilterCount > 0 && selectedTargetCount > 0);
+            CopyButton.Content = selectedTargetCount > 0
+                ? $"Скопировать фильтры ({selectedFilterCount} на {selectedTargetCount} в.)"
+                : "Скопировать фильтры";
         }
 
         private void CopyButton_Click(object sender, RoutedEventArgs e)
