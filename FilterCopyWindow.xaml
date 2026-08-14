@@ -30,12 +30,32 @@
             </Style.Triggers>
         </Style>
 
+        <!-- ComboBox & ComboBoxItem High Contrast Styles -->
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Background" Value="#252526"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#007ACC"/>
+                    <Setter Property="Foreground" Value="#FFFFFF"/>
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#007ACC"/>
+                    <Setter Property="Foreground" Value="#FFFFFF"/>
+                    <Setter Property="FontWeight" Value="Bold"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
         <Style TargetType="ComboBox">
             <Setter Property="Background" Value="#2D2D30"/>
             <Setter Property="Foreground" Value="#FFFFFF"/>
             <Setter Property="BorderBrush" Value="#434346"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
 
         <Style TargetType="CheckBox">
@@ -169,7 +189,7 @@
                               Background="#2D2D30" RowBackground="#252526" AlternatingRowBackground="#2D2D30"
                               Foreground="#FFFFFF" BorderBrush="#3F3F46" GridLinesVisibility="Horizontal"
                               HorizontalGridLinesBrush="#3F3F46" HeadersVisibility="Column"
-                              CanUserAddRows="False" SelectionMode="Single">
+                              CanUserAddRows="False" SelectionMode="Extended">
                         <DataGrid.Resources>
                             <Style TargetType="DataGridColumnHeader">
                                 <Setter Property="Background" Value="#333337"/>
@@ -181,14 +201,15 @@
                             </Style>
                         </DataGrid.Resources>
                         <DataGrid.Columns>
-                            <DataGridCheckBoxColumn Binding="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" Width="36">
-                                <DataGridCheckBoxColumn.ElementStyle>
-                                    <Style TargetType="CheckBox">
-                                        <Setter Property="HorizontalAlignment" Value="Center"/>
-                                        <Setter Property="VerticalAlignment" Value="Center"/>
-                                    </Style>
-                                </DataGridCheckBoxColumn.ElementStyle>
-                            </DataGridCheckBoxColumn>
+                            <DataGridTemplateColumn Width="36">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  Click="FilterCheckBox_Click"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                             <DataGridTextColumn Header="Имя фильтра" Binding="{Binding FilterName}" Width="*" IsReadOnly="True"/>
                             <DataGridTextColumn Header="Переопределения" Binding="{Binding OverridesSummary}" Width="160" IsReadOnly="True"/>
                         </DataGrid.Columns>
@@ -253,7 +274,7 @@
                               Background="#2D2D30" RowBackground="#252526" AlternatingRowBackground="#2D2D30"
                               Foreground="#FFFFFF" BorderBrush="#3F3F46" GridLinesVisibility="Horizontal"
                               HorizontalGridLinesBrush="#3F3F46" HeadersVisibility="Column"
-                              CanUserAddRows="False" SelectionMode="Single">
+                              CanUserAddRows="False" SelectionMode="Extended">
                         <DataGrid.Resources>
                             <Style TargetType="DataGridColumnHeader">
                                 <Setter Property="Background" Value="#333337"/>
@@ -265,14 +286,15 @@
                             </Style>
                         </DataGrid.Resources>
                         <DataGrid.Columns>
-                            <DataGridCheckBoxColumn Binding="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" Width="36">
-                                <DataGridCheckBoxColumn.ElementStyle>
-                                    <Style TargetType="CheckBox">
-                                        <Setter Property="HorizontalAlignment" Value="Center"/>
-                                        <Setter Property="VerticalAlignment" Value="Center"/>
-                                    </Style>
-                                </DataGridCheckBoxColumn.ElementStyle>
-                            </DataGridCheckBoxColumn>
+                            <DataGridTemplateColumn Width="36">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  Click="TargetCheckBox_Click"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                             <DataGridTextColumn Header="Наименование вида / шаблона" Binding="{Binding ViewName}" Width="*" IsReadOnly="True"/>
                             <DataGridTextColumn Header="Группа видов" Binding="{Binding ViewTypeGroup}" Width="130" IsReadOnly="True"/>
                             <DataGridTextColumn Header="Статус шаблона" Binding="{Binding TemplateStatusText}" Width="160" IsReadOnly="True"/>
