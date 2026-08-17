@@ -60,10 +60,11 @@ namespace BCCPlugIn
                     return false;
                 }
 
-                // 2. Сортировка: Номер помещения -> Имя помещения -> Обозначение конструкции -> Площадь
+                // 2. Сортировка: Номер помещения -> Имя помещения -> Обозначение конструкции -> Ориентация -> Площадь
                 var sortedCubes = cubes.OrderBy(c => GetParamString(c, HeatLossEngine.P_ROOM_NUMBER))
                                        .ThenBy(c => GetParamString(c, HeatLossEngine.P_ROOM_NAME))
                                        .ThenBy(c => GetParamString(c, HeatLossEngine.P_CONSTR_LABEL))
+                                       .ThenBy(c => GetParamString(c, HeatLossEngine.P_ORIENTATION))
                                        .ThenBy(c => GetParamDouble(c, HeatLossEngine.P_AREA))
                                        .ToList();
 
@@ -444,21 +445,29 @@ namespace BCCPlugIn
             if (elem == null) return "";
             try
             {
-                if (ParamAliases.TryGetValue(paramName, out string[] aliases))
+                string val = GetElementParamString(elem, paramName);
+                if (!string.IsNullOrEmpty(val)) return val;
+
+                // Fallback на Тип элемента (FamilySymbol / ElementType)
+                Element typeElem = GetElementType(elem);
+                if (typeElem != null)
                 {
-                    foreach (string alias in aliases)
-                    {
-                        Parameter p = elem.LookupParameter(alias);
-                        if (p != null && p.HasValue)
-                        {
-                            if (p.StorageType == StorageType.String) return p.AsString() ?? "";
-                            return p.AsValueString() ?? "";
-                        }
-                    }
+                    val = GetElementParamString(typeElem, paramName);
+                    if (!string.IsNullOrEmpty(val)) return val;
                 }
-                else
+            }
+            catch { }
+            return "";
+        }
+
+        private static string GetElementParamString(Element elem, string paramName)
+        {
+            if (elem == null) return "";
+            if (ParamAliases.TryGetValue(paramName, out string[] aliases))
+            {
+                foreach (string alias in aliases)
                 {
-                    Parameter p = elem.LookupParameter(paramName);
+                    Parameter p = elem.LookupParameter(alias);
                     if (p != null && p.HasValue)
                     {
                         if (p.StorageType == StorageType.String) return p.AsString() ?? "";
@@ -466,7 +475,15 @@ namespace BCCPlugIn
                     }
                 }
             }
-            catch { }
+            else
+            {
+                Parameter p = elem.LookupParameter(paramName);
+                if (p != null && p.HasValue)
+                {
+                    if (p.StorageType == StorageType.String) return p.AsString() ?? "";
+                    return p.AsValueString() ?? "";
+                }
+            }
             return "";
         }
 
@@ -475,23 +492,31 @@ namespace BCCPlugIn
             if (elem == null) return 0.0;
             try
             {
-                if (ParamAliases.TryGetValue(paramName, out string[] aliases))
+                double val = GetElementParamDouble(elem, paramName);
+                if (val != 0.0) return val;
+
+                // Fallback на Тип элемента (FamilySymbol / ElementType) - например для коэффициента k, хранящегося на типе
+                Element typeElem = GetElementType(elem);
+                if (typeElem != null)
                 {
-                    foreach (string alias in aliases)
-                    {
-                        Parameter p = elem.LookupParameter(alias);
-                        if (p != null && p.HasValue)
-                        {
-                            if (p.StorageType == StorageType.Double) return Math.Round(p.AsDouble(), 4);
-                            if (p.StorageType == StorageType.Integer) return p.AsInteger();
-                            if (double.TryParse(p.AsString().Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out double val))
-                                return val;
-                        }
-                    }
+                    double typeVal = GetElementParamDouble(typeElem, paramName);
+                    if (typeVal != 0.0) return typeVal;
                 }
-                else
+
+                return val;
+            }
+            catch { }
+            return 0.0;
+        }
+
+        private static double GetElementParamDouble(Element elem, string paramName)
+        {
+            if (elem == null) return 0.0;
+            if (ParamAliases.TryGetValue(paramName, out string[] aliases))
+            {
+                foreach (string alias in aliases)
                 {
-                    Parameter p = elem.LookupParameter(paramName);
+                    Parameter p = elem.LookupParameter(alias);
                     if (p != null && p.HasValue)
                     {
                         if (p.StorageType == StorageType.Double) return Math.Round(p.AsDouble(), 4);
@@ -501,8 +526,33 @@ namespace BCCPlugIn
                     }
                 }
             }
-            catch { }
+            else
+            {
+                Parameter p = elem.LookupParameter(paramName);
+                if (p != null && p.HasValue)
+                {
+                    if (p.StorageType == StorageType.Double) return Math.Round(p.AsDouble(), 4);
+                    if (p.StorageType == StorageType.Integer) return p.AsInteger();
+                    if (double.TryParse(p.AsString().Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out double val))
+                        return val;
+                }
+            }
             return 0.0;
+        }
+
+        private static Element GetElementType(Element elem)
+        {
+            if (elem is FamilyInstance fi && fi.Symbol != null)
+                return fi.Symbol;
+
+            if (elem != null && elem.Document != null)
+            {
+                ElementId typeId = elem.GetTypeId();
+                if (typeId != null && typeId != ElementId.InvalidElementId)
+                    return elem.Document.GetElement(typeId);
+            }
+
+            return null;
         }
     }
 }

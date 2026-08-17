@@ -535,7 +535,7 @@ namespace BCCPlugIn
                     ScheduleField fieldRoomNum = null;
                     ScheduleField fieldRoomName = null;
                     ScheduleField fieldConstrLabel = null;
-                    ScheduleField fieldArea = null;
+                    ScheduleField fieldOrientation = null;
 
                     foreach (ScheduleField f in def.GetFieldOrder().Select(id => def.GetField(id)))
                     {
@@ -543,7 +543,7 @@ namespace BCCPlugIn
                         if (fn == P_ROOM_NUMBER) fieldRoomNum = f;
                         else if (fn == P_ROOM_NAME) fieldRoomName = f;
                         else if (fn == P_CONSTR_LABEL) fieldConstrLabel = f;
-                        else if (fn == P_AREA) fieldArea = f;
+                        else if (fn == P_ORIENTATION) fieldOrientation = f;
                     }
 
                     // 1. По номеру помещения с заголовком и нижним колонтитулом ("Только итого")
@@ -571,10 +571,10 @@ namespace BCCPlugIn
                         def.AddSortGroupField(sort3);
                     }
 
-                    // 4. По площади конструкции
-                    if (fieldArea != null)
+                    // 4. По ориентации конструкции
+                    if (fieldOrientation != null)
                     {
-                        ScheduleSortGroupField sort4 = new ScheduleSortGroupField(fieldArea.FieldId);
+                        ScheduleSortGroupField sort4 = new ScheduleSortGroupField(fieldOrientation.FieldId);
                         def.AddSortGroupField(sort4);
                     }
 
@@ -719,13 +719,19 @@ namespace BCCPlugIn
                 foreach (FamilyInstance cube in cubes)
                 {
                     string label = GetText(cube, P_CONSTR_LABEL);
-                    if (!string.IsNullOrEmpty(label) && typeSymbolMap.TryGetValue(label, out FamilySymbol targetSymbol))
+                    if (!string.IsNullOrEmpty(label) && coeffKMap.TryGetValue(label, out double coeffK))
                     {
-                        if (cube.Symbol.Id != targetSymbol.Id)
+                        if (typeSymbolMap.TryGetValue(label, out FamilySymbol targetSymbol))
                         {
-                            cube.Symbol = targetSymbol;
-                            updatedCount++;
+                            if (cube.Symbol.Id != targetSymbol.Id)
+                            {
+                                cube.Symbol = targetSymbol;
+                                updatedCount++;
+                            }
                         }
+
+                        // Если параметр k доступен на экземпляре — также заполняем его
+                        SetNumber(cube, P_COEFF_K, coeffK);
                     }
                 }
 
