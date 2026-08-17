@@ -7,6 +7,37 @@ using Autodesk.Revit.DB.Mechanical;
 
 namespace BCCPlugIn
 {
+    public enum ExteriorDetectionMode
+    {
+        Auto = 0,
+        ByParameter = 1
+    }
+
+    public enum ParameterConditionType
+    {
+        CheckboxChecked = 0,   // Чекбокс включен (1 / Да / True)
+        CheckboxUnchecked = 1, // Чекбокс выключен (0 / Нет / False)
+        TextEquals = 2,        // Текст равен значению
+        TextContains = 3,      // Текст содержит
+        IsNotEmpty = 4         // Параметр заполнен (не пустой)
+    }
+
+    public enum ExteriorClassificationResult
+    {
+        MatchesExterior = 0,   // Если условие выполнено -> Наружная (isInterior = false)
+        MatchesInterior = 1    // Если условие выполнено -> Внутренняя (isInterior = true)
+    }
+
+    public class ExteriorDetectionOptions
+    {
+        public ExteriorDetectionMode Mode { get; set; } = ExteriorDetectionMode.ByParameter;
+        public string ParameterName { get; set; } = "MN_Наружный";
+        public ParameterConditionType Condition { get; set; } = ParameterConditionType.CheckboxChecked;
+        public string TargetValue { get; set; } = "1";
+        public ExteriorClassificationResult Classification { get; set; } = ExteriorClassificationResult.MatchesExterior;
+        public bool FallbackToAuto { get; set; } = true;
+    }
+
     /// <summary>
     /// Основной движок модуля «Теплопотери».
     /// Для каждого MEP-пространства (Space) находит все ограждающие конструкции,
@@ -68,8 +99,13 @@ namespace BCCPlugIn
             bool processInteriorWalls,
             bool processFloors,
             bool processDoors,
-            bool processWindows)
+            bool processWindows,
+            ExteriorDetectionOptions exteriorOptions = null)
         {
+            if (exteriorOptions == null)
+            {
+                exteriorOptions = new ExteriorDetectionOptions();
+            }
             int placedCount = 0;
             _typeCodeMap = new Dictionary<ElementId, string>();
             _prefixCounterMap = new Dictionary<string, int>();
@@ -170,7 +206,7 @@ namespace BCCPlugIn
                                     ? seg.ElementId.IntegerValue.ToString() + "_" + seg.LinkElementId.IntegerValue.ToString()
                                     : seg.ElementId.IntegerValue.ToString();
 
-                                bool isInterior = IsInteriorWall(boundElem, key, wallSpaceCountMap);
+                                bool isInterior = IsInteriorElement(boundElem, cat, key, wallSpaceCountMap, exteriorOptions);
                                 if (!isInterior)
                                 {
                                     string o = GetOrientation(boundElem, cat, seg);
@@ -220,7 +256,7 @@ namespace BCCPlugIn
                                     : seg.ElementId.IntegerValue.ToString())
 #pragma warning restore CS0618
                                 : null;
-                            bool isInteriorWall = IsInteriorWall(boundElem, wallKey, wallSpaceCountMap);
+                            bool isInteriorWall = IsInteriorElement(boundElem, cat, wallKey, wallSpaceCountMap, exteriorOptions);
 
                             // 1. Проверяем, надо ли ставить кубик для САМОЙ конструкции
                             bool shouldPlaceSelfCube = false;
@@ -273,7 +309,7 @@ namespace BCCPlugIn
                                             double lengthMm  = 0;
                                             double heightMm  = 0;
                                             double areaSqM   = 0;
-                                            string label     = GetConstructionLabel(boundElem, cat);
+                                            string label     = GetConstructionLabel(boundElem, cat, exteriorOptions);
                                             string orient    = GetOrientation(boundElem, cat, seg);
 
                                             if (boundElem != null)
@@ -309,7 +345,8 @@ namespace BCCPlugIn
                                             {
                                                 totalOpeningsAreaSqM = ProcessWallOpenings(boundElem, linkInst, space, roomNumber, roomName,
                                                     cornerTypeStr, isCornerSpace, tempOutside, effectiveTempIn, symbol, seg, roomHeight,
-                                                    processDoors, processWindows, isInteriorWall, processInteriorWalls, processedKeys, ref placedCount);
+                                                    processDoors, processWindows, isInteriorWall, processInteriorWalls, processedKeys, ref placedCount,
+                                                    processExteriorWalls, exteriorOptions);
                                             }
 
                                             double netWallAreaSqM = isWall
@@ -343,7 +380,8 @@ namespace BCCPlugIn
                             {
                                 ProcessWallOpenings(boundElem, linkInst, space, roomNumber, roomName, cornerTypeStr, isCornerSpace,
                                                     tempOutside, tempInside, symbol, seg, roomHeight,
-                                                    processDoors, processWindows, isInteriorWall, processInteriorWalls, processedKeys, ref placedCount);
+                                                    processDoors, processWindows, isInteriorWall, processInteriorWalls, processedKeys, ref placedCount,
+                                                    processExteriorWalls, exteriorOptions);
                             }
                         }
                     }
@@ -999,7 +1037,9 @@ namespace BCCPlugIn
             bool isInteriorWall,
             bool processInteriorWalls,
             HashSet<string> processedKeys,
-            ref int placedCount)
+            ref int placedCount,
+            bool processExteriorWalls = true,
+            ExteriorDetectionOptions exteriorOptions = null)
         {
             double totalOpeningsAreaSqM = 0;
             try
@@ -1018,12 +1058,24 @@ namespace BCCPlugIn
                         bool isD = (cId == (long)BuiltInCategory.OST_Doors);
                         bool isW = (cId == (long)BuiltInCategory.OST_Windows);
 
-                        if (isW && processWindows) return true; // Окна являются наружными проёмами, ставим всегда при включении
+                        // Проверяем принадлежность проёма к наружной/внутренней конструкции
+                        bool openingIsInterior = isInteriorWall;
+                        if (exteriorOptions != null && exteriorOptions.Mode == ExteriorDetectionMode.ByParameter)
+                        {
+                            openingIsInterior = IsInteriorElement(fi, isD ? BuiltInCategory.OST_Doors : BuiltInCategory.OST_Windows, null, null, exteriorOptions);
+                        }
+
+                        if (isW && processWindows)
+                        {
+                            if (openingIsInterior && !processInteriorWalls) return false;
+                            if (!openingIsInterior && !processExteriorWalls) return false;
+                            return true;
+                        }
 
                         if (isD && processDoors)
                         {
-                            // Двери во внутренних стенах пропускаются, если не включены внутренние стены
-                            if (isInteriorWall && !processInteriorWalls) return false;
+                            if (openingIsInterior && !processInteriorWalls) return false;
+                            if (!openingIsInterior && !processExteriorWalls) return false;
                             return true;
                         }
 
@@ -1083,7 +1135,7 @@ namespace BCCPlugIn
                         BuiltInCategory openCat = GetBuiltInCategory(opening);
                         double lMm = 0, hMm = 0, aSqM = 0;
                         GetConstructionDimensions(opening, openCat, seg, null, null, null, 0, roomHeightFt, out lMm, out hMm, out aSqM);
-                        string label = GetConstructionLabel(opening, openCat);
+                        string label = GetConstructionLabel(opening, openCat, exteriorOptions);
                         string orient = GetOrientation(opening, openCat, seg);
 
                         double b1 = GetB1OrientationAddon(orient);
@@ -1359,7 +1411,180 @@ namespace BCCPlugIn
             return map;
         }
 
-        private static bool IsInteriorWall(Element boundElem, string wallKey, Dictionary<string, int> wallSpaceCountMap)
+        public static bool IsInteriorElement(
+            Element boundElem,
+            BuiltInCategory cat,
+            string wallKey,
+            Dictionary<string, int> wallSpaceCountMap,
+            ExteriorDetectionOptions options)
+        {
+            if (options != null && options.Mode == ExteriorDetectionMode.ByParameter && !string.IsNullOrWhiteSpace(options.ParameterName))
+            {
+                bool paramEvaluated = false;
+                bool isConditionMet = false;
+
+                if (boundElem != null)
+                {
+                    // 1. Поиск параметра в экземпляре
+                    Parameter p = FindParameterByName(boundElem, options.ParameterName);
+                    // 2. Если не найден в экземпляре — поиск в типе элемента
+                    if (p == null)
+                    {
+                        ElementId typeId = boundElem.GetTypeId();
+                        if (typeId != null && typeId != ElementId.InvalidElementId)
+                        {
+                            Document elDoc = boundElem.Document;
+                            if (elDoc != null)
+                            {
+                                Element typeElem = elDoc.GetElement(typeId);
+                                if (typeElem != null)
+                                {
+                                    p = FindParameterByName(typeElem, options.ParameterName);
+                                }
+                            }
+                        }
+                    }
+
+                    if (p != null)
+                    {
+                        paramEvaluated = true;
+                        isConditionMet = EvaluateParameterCondition(p, options.Condition, options.TargetValue);
+                    }
+                }
+
+                if (paramEvaluated)
+                {
+                    if (options.Classification == ExteriorClassificationResult.MatchesExterior)
+                    {
+                        // Если условие выполнено -> это наружная конструкция => isInterior = false
+                        return !isConditionMet;
+                    }
+                    else
+                    {
+                        // Если условие выполнено -> это внутренняя конструкция => isInterior = true
+                        return isConditionMet;
+                    }
+                }
+
+                if (!options.FallbackToAuto)
+                {
+                    return options.Classification == ExteriorClassificationResult.MatchesExterior;
+                }
+            }
+
+            // Стандартный fallback-алгоритм Revit
+            return IsInteriorWallAuto(boundElem, wallKey, wallSpaceCountMap);
+        }
+
+        private static Parameter FindParameterByName(Element elem, string paramName)
+        {
+            if (elem == null || string.IsNullOrWhiteSpace(paramName)) return null;
+
+            try
+            {
+                Parameter p = elem.LookupParameter(paramName);
+                if (p != null) return p;
+
+                foreach (Parameter param in elem.Parameters)
+                {
+                    if (param != null && param.Definition != null)
+                    {
+                        if (string.Equals(param.Definition.Name, paramName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return param;
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            return null;
+        }
+
+        private static bool EvaluateParameterCondition(Parameter p, ParameterConditionType condition, string targetValue)
+        {
+            if (p == null) return false;
+
+            try
+            {
+                switch (condition)
+                {
+                    case ParameterConditionType.CheckboxChecked:
+                    {
+                        if (p.StorageType == StorageType.Integer)
+                        {
+                            return p.AsInteger() == 1;
+                        }
+                        string strVal = GetParameterStringValue(p).Trim().ToLowerInvariant();
+                        return strVal == "1" || strVal == "да" || strVal == "true" || strVal == "yes" || strVal == "истина";
+                    }
+
+                    case ParameterConditionType.CheckboxUnchecked:
+                    {
+                        if (p.StorageType == StorageType.Integer)
+                        {
+                            return p.AsInteger() == 0;
+                        }
+                        string strVal = GetParameterStringValue(p).Trim().ToLowerInvariant();
+                        return strVal == "0" || strVal == "нет" || strVal == "false" || strVal == "no" || strVal == "ложь" || string.IsNullOrEmpty(strVal);
+                    }
+
+                    case ParameterConditionType.IsNotEmpty:
+                    {
+                        if (!p.HasValue) return false;
+                        if (p.StorageType == StorageType.String)
+                        {
+                            return !string.IsNullOrWhiteSpace(p.AsString());
+                        }
+                        return true;
+                    }
+
+                    case ParameterConditionType.TextEquals:
+                    {
+                        string val = GetParameterStringValue(p).Trim();
+                        return string.Equals(val, targetValue ?? "", StringComparison.OrdinalIgnoreCase);
+                    }
+
+                    case ParameterConditionType.TextContains:
+                    {
+                        string val = GetParameterStringValue(p);
+                        return !string.IsNullOrEmpty(val) &&
+                               !string.IsNullOrEmpty(targetValue) &&
+                               val.IndexOf(targetValue, StringComparison.OrdinalIgnoreCase) >= 0;
+                    }
+                }
+            }
+            catch { }
+
+            return false;
+        }
+
+        private static string GetParameterStringValue(Parameter p)
+        {
+            if (p == null || !p.HasValue) return "";
+            try
+            {
+                switch (p.StorageType)
+                {
+                    case StorageType.String:
+                        return p.AsString() ?? "";
+                    case StorageType.Integer:
+                        return p.AsValueString() ?? p.AsInteger().ToString();
+                    case StorageType.Double:
+                        return p.AsValueString() ?? p.AsDouble().ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    case StorageType.ElementId:
+                        return p.AsElementId()?.IntegerValue.ToString() ?? "";
+                    default:
+                        return p.AsValueString() ?? "";
+                }
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        private static bool IsInteriorWallAuto(Element boundElem, string wallKey, Dictionary<string, int> wallSpaceCountMap)
         {
             if (boundElem is Wall w)
             {
@@ -1577,7 +1802,7 @@ namespace BCCPlugIn
         /// <summary>
         /// Метка конструкции с использованием сокращений: НС1, НС2, ВС1, ДВ1, ОК1, ПР1, ПОТ1, КР1...
         /// </summary>
-        private string GetConstructionLabel(Element elem, BuiltInCategory cat)
+        private string GetConstructionLabel(Element elem, BuiltInCategory cat, ExteriorDetectionOptions exteriorOptions = null)
         {
             if (elem == null) return "НС1";
 
@@ -1603,17 +1828,7 @@ namespace BCCPlugIn
             // 1. Стены
             if (elem is Wall || bCat == BuiltInCategory.OST_Walls || catName.IndexOf("Стен", StringComparison.OrdinalIgnoreCase) >= 0)
             {
-                bool isInterior = false;
-                if (elem is Wall wall)
-                {
-                    try
-                    {
-                        if (wall.WallType != null && wall.WallType.Function == WallFunction.Interior)
-                            isInterior = true;
-                    }
-                    catch { }
-                }
-
+                bool isInterior = IsInteriorElement(elem, BuiltInCategory.OST_Walls, null, null, exteriorOptions);
                 prefix = isInterior ? "ВС" : "НС";
             }
             // 2. Окна

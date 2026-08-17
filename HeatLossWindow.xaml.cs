@@ -21,6 +21,43 @@ namespace BCCPlugIn
 
         public bool OnlyActiveView => ActiveViewRadioButton?.IsChecked == true;
 
+        public ExteriorDetectionOptions ExteriorOptions
+        {
+            get
+            {
+                var options = new ExteriorDetectionOptions();
+                if (ExteriorDetectAutoRadioButton?.IsChecked == true)
+                {
+                    options.Mode = ExteriorDetectionMode.Auto;
+                    return options;
+                }
+
+                options.Mode = ExteriorDetectionMode.ByParameter;
+                options.ParameterName = string.IsNullOrWhiteSpace(ExteriorParamNameTextBox?.Text) 
+                    ? "MN_Наружный" 
+                    : ExteriorParamNameTextBox.Text.Trim();
+
+                int condIndex = ExteriorParamConditionComboBox?.SelectedIndex ?? 0;
+                switch (condIndex)
+                {
+                    case 0: options.Condition = ParameterConditionType.CheckboxChecked; break;
+                    case 1: options.Condition = ParameterConditionType.CheckboxUnchecked; break;
+                    case 2: options.Condition = ParameterConditionType.TextEquals; break;
+                    case 3: options.Condition = ParameterConditionType.TextContains; break;
+                    case 4: options.Condition = ParameterConditionType.IsNotEmpty; break;
+                    default: options.Condition = ParameterConditionType.CheckboxChecked; break;
+                }
+
+                options.TargetValue = ExteriorParamValueTextBox?.Text?.Trim() ?? "1";
+                options.Classification = (ExteriorClassificationComboBox?.SelectedIndex == 1)
+                    ? ExteriorClassificationResult.MatchesInterior
+                    : ExteriorClassificationResult.MatchesExterior;
+
+                options.FallbackToAuto = ExteriorFallbackCheckBox?.IsChecked == true;
+                return options;
+            }
+        }
+
         private readonly List<FamilySymbolItem> _items;
         private readonly int _allSpacesCount;
         private readonly int _activeViewSpacesCount;
@@ -52,6 +89,26 @@ namespace BCCPlugIn
         private void Scope_Checked(object sender, RoutedEventArgs e)
         {
             UpdateInfoText();
+        }
+
+        private void ExteriorDetect_Checked(object sender, RoutedEventArgs e)
+        {
+            if (ExteriorParamSettingsPanel != null && ExteriorDetectByParamRadioButton != null)
+            {
+                ExteriorParamSettingsPanel.Visibility = (ExteriorDetectByParamRadioButton.IsChecked == true)
+                    ? System.Windows.Visibility.Visible
+                    : System.Windows.Visibility.Collapsed;
+            }
+        }
+
+        private void ExteriorParamCondition_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            if (ExteriorParamValueRow == null || ExteriorParamConditionComboBox == null) return;
+            int idx = ExteriorParamConditionComboBox.SelectedIndex;
+            // idx == 2 (TextEquals), idx == 3 (TextContains)
+            ExteriorParamValueRow.Visibility = (idx == 2 || idx == 3) 
+                ? System.Windows.Visibility.Visible 
+                : System.Windows.Visibility.Collapsed;
         }
 
         private void UpdateInfoText()

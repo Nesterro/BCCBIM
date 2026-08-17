@@ -124,7 +124,8 @@ namespace BCCPlugIn
                     window.ProcessInteriorWalls,
                     window.ProcessFloors,
                     window.ProcessDoors,
-                    window.ProcessWindows);
+                    window.ProcessWindows,
+                    window.ExteriorOptions);
 
                 // ── 6. Создать / обновить спецификацию ──────────────────────────────
                 string schedError;
