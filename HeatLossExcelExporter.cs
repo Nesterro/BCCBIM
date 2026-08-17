@@ -1,13 +1,19 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
+using System.Globalization;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
+using System.Text;
+using System.Xml;
 using Autodesk.Revit.DB;
-using ClosedXML.Excel;
 
 namespace BCCPlugIn
 {
+    /// <summary>
+    /// Автономный генератор Excel (.xlsx) без внешних зависимостей.
+    /// Формирует стандартный OpenXML Spreadsheet пакет с живыми формулами и форматированием.
+    /// </summary>
     public static class HeatLossExcelExporter
     {
         public static bool ExportToExcel(Document doc, string filePath, out string errorMessage)
@@ -47,193 +53,8 @@ namespace BCCPlugIn
                                        .ThenBy(c => GetParamDouble(c, HeatLossEngine.P_AREA))
                                        .ToList();
 
-                // 3. Создание книги Excel с помощью ClosedXML
-                using (var workbook = new XLWorkbook())
-                {
-                    var ws = workbook.Worksheets.Add("Теплопотери");
-
-                    // Заголовок листа
-                    ws.Cell("A1").Value = "BIMBCC | Расчёт теплопотерь ограждающих конструкций";
-                    ws.Cell("A1").Style.Font.Bold = true;
-                    ws.Cell("A1").Style.Font.FontSize = 14;
-                    ws.Cell("A1").Style.Font.FontColor = XLColor.FromHtml("#C91414");
-
-                    string docTitle = doc.Title;
-                    ws.Cell("A2").Value = $"Проект: {docTitle} | Дата экспорта: {DateTime.Now:dd.MM.yyyy HH:mm}";
-                    ws.Cell("A2").Style.Font.Italic = true;
-                    ws.Cell("A2").Style.Font.FontSize = 10;
-                    ws.Cell("A2").Style.Font.FontColor = XLColor.FromHtml("#555555");
-
-                    // Шапка таблицы (Строка 4)
-                    int headerRow = 4;
-                    string[] headers = new[]
-                    {
-                        "Номер помещения",
-                        "Имя помещения",
-                        "t нар, °C",
-                        "t вн, °C",
-                        "Тип помещения",
-                        "Конструкция",
-                        "Ориентация",
-                        "Площадь A, м²",
-                        "Коэфф. n",
-                        "Коэфф. k, Вт/(м²·°C)",
-                        "Надбавка b1",
-                        "Надбавка b2",
-                        "Надбавка b3",
-                        "Надбавка b4",
-                        "Коэфф. надбавки",
-                        "Теплопотери Q, Вт"
-                    };
-
-                    for (int c = 0; c < headers.Length; c++)
-                    {
-                        var cell = ws.Cell(headerRow, c + 1);
-                        cell.Value = headers[c];
-                        cell.Style.Font.Bold = true;
-                        cell.Style.Font.FontSize = 11;
-                        cell.Style.Font.FontColor = XLColor.White;
-                        cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1F497D"); // Элегантный синий корпоративный цвет
-                        cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
-                        cell.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
-                        cell.Style.Alignment.WrapText = true;
-                        cell.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
-                        cell.Style.Border.OutsideBorderColor = XLColor.FromHtml("#B0B0B0");
-                    }
-                    ws.Row(headerRow).Height = 28;
-
-                    // Заполнение строк данных
-                    int startDataRow = 5;
-                    int currentRow = startDataRow;
-
-                    foreach (var cube in sortedCubes)
-                    {
-                        string roomNum     = GetParamString(cube, HeatLossEngine.P_ROOM_NUMBER);
-                        string roomName    = GetParamString(cube, HeatLossEngine.P_ROOM_NAME);
-                        double tempOut     = GetParamDouble(cube, HeatLossEngine.P_TEMP_OUT);
-                        double tempIn      = GetParamDouble(cube, HeatLossEngine.P_TEMP_IN);
-                        string cornerType  = GetParamString(cube, HeatLossEngine.P_CORNER_TYPE);
-                        string constrLabel = GetParamString(cube, HeatLossEngine.P_CONSTR_LABEL);
-                        string orient      = GetParamString(cube, HeatLossEngine.P_ORIENTATION);
-                        double area        = GetParamDouble(cube, HeatLossEngine.P_AREA);
-                        double coeffN      = GetParamDouble(cube, HeatLossEngine.P_COEFF_N);
-                        double coeffK      = GetParamDouble(cube, HeatLossEngine.P_COEFF_K);
-                        double b1          = GetParamDouble(cube, HeatLossEngine.P_ADD_B1);
-                        double b2          = GetParamDouble(cube, HeatLossEngine.P_ADD_B2);
-                        double b3          = GetParamDouble(cube, HeatLossEngine.P_ADD_B3);
-                        double b4          = GetParamDouble(cube, HeatLossEngine.P_ADD_B4);
-
-                        // Значения колонок 1..14
-                        ws.Cell(currentRow, 1).Value  = roomNum;
-                        ws.Cell(currentRow, 2).Value  = roomName;
-                        ws.Cell(currentRow, 3).Value  = tempOut;
-                        ws.Cell(currentRow, 4).Value  = tempIn;
-                        ws.Cell(currentRow, 5).Value  = cornerType;
-                        ws.Cell(currentRow, 6).Value  = constrLabel;
-                        ws.Cell(currentRow, 7).Value  = orient;
-                        ws.Cell(currentRow, 8).Value  = area;
-                        ws.Cell(currentRow, 9).Value  = coeffN;
-                        ws.Cell(currentRow, 10).Value = coeffK;
-                        ws.Cell(currentRow, 11).Value = b1;
-                        ws.Cell(currentRow, 12).Value = b2;
-                        ws.Cell(currentRow, 13).Value = b3;
-                        ws.Cell(currentRow, 14).Value = b4;
-
-                        // ФОРМУЛА: Коэффициент надбавки (Колонка 15 / O) = 1 + b1 + b2 + b3 + b4
-                        ws.Cell(currentRow, 15).FormulaA1 = $"=1+K{currentRow}+L{currentRow}+M{currentRow}+N{currentRow}";
-
-                        // ФОРМУЛА: Теплопотери Q (Колонка 16 / P) = ROUND(A * k * (t_in - t_out) * n * coeff_add, 2)
-                        ws.Cell(currentRow, 16).FormulaA1 = $"=ROUND(H{currentRow}*J{currentRow}*(D{currentRow}-C{currentRow})*I{currentRow}*O{currentRow}, 2)";
-
-                        // Форматирование ячеек строки
-                        for (int col = 1; col <= 16; col++)
-                        {
-                            var cell = ws.Cell(currentRow, col);
-                            cell.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
-                            cell.Style.Border.OutsideBorderColor = XLColor.FromHtml("#E0E0E0");
-
-                            // Текстовые столбцы выравниваем по центру / влево
-                            if (col == 1 || col == 3 || col == 4 || col == 5 || col == 6 || col == 7)
-                            {
-                                cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
-                            }
-                            else if (col == 2)
-                            {
-                                cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Left;
-                            }
-                            else
-                            {
-                                cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
-                            }
-                        }
-
-                        // Числовые форматы
-                        ws.Cell(currentRow, 3).Style.NumberFormat.Format  = "0.0";
-                        ws.Cell(currentRow, 4).Style.NumberFormat.Format  = "0.0";
-                        ws.Cell(currentRow, 8).Style.NumberFormat.Format  = "0.00";
-                        ws.Cell(currentRow, 9).Style.NumberFormat.Format  = "0.0";
-                        ws.Cell(currentRow, 10).Style.NumberFormat.Format = "0.000";
-                        ws.Cell(currentRow, 11).Style.NumberFormat.Format = "0.00";
-                        ws.Cell(currentRow, 12).Style.NumberFormat.Format = "0.00";
-                        ws.Cell(currentRow, 13).Style.NumberFormat.Format = "0.00";
-                        ws.Cell(currentRow, 14).Style.NumberFormat.Format = "0.00";
-                        ws.Cell(currentRow, 15).Style.NumberFormat.Format = "0.00";
-                        ws.Cell(currentRow, 16).Style.NumberFormat.Format = "#,##0.00";
-
-                        // Зебра строк для удобства чтения
-                        if ((currentRow - startDataRow) % 2 == 1)
-                        {
-                            ws.Range(currentRow, 1, currentRow, 16).Style.Fill.BackgroundColor = XLColor.FromHtml("#F9FAFC");
-                        }
-
-                        currentRow++;
-                    }
-
-                    int lastDataRow = currentRow - 1;
-
-                    // Строка ИТОГО ПО ЗДАНИЮ
-                    int totalRow = currentRow;
-                    ws.Range(totalRow, 1, totalRow, 7).Merge();
-                    ws.Cell(totalRow, 1).Value = "ИТОГО ПО ЗДАНИЮ:";
-                    ws.Cell(totalRow, 1).Style.Font.Bold = true;
-                    ws.Cell(totalRow, 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
-
-                    // Формула суммы площадей
-                    ws.Cell(totalRow, 8).FormulaA1 = $"=SUM(H{startDataRow}:H{lastDataRow})";
-                    ws.Cell(totalRow, 8).Style.Font.Bold = true;
-                    ws.Cell(totalRow, 8).Style.NumberFormat.Format = "#,##0.00";
-
-                    // Формула суммы теплопотерь Q
-                    ws.Cell(totalRow, 16).FormulaA1 = $"=SUM(P{startDataRow}:P{lastDataRow})";
-                    ws.Cell(totalRow, 16).Style.Font.Bold = true;
-                    ws.Cell(totalRow, 16).Style.NumberFormat.Format = "#,##0.00";
-
-                    // Стилизация строки итогов
-                    var totalRange = ws.Range(totalRow, 1, totalRow, 16);
-                    totalRange.Style.Fill.BackgroundColor = XLColor.FromHtml("#EAEDED");
-                    totalRange.Style.Border.TopBorder = XLBorderStyleValues.Medium;
-                    totalRange.Style.Border.BottomBorder = XLBorderStyleValues.Double;
-                    totalRange.Style.Border.OutsideBorderColor = XLColor.FromHtml("#2C3E50");
-
-                    // Автоподбор ширины столбцов
-                    ws.Columns().AdjustToContents(startDataRow - 1, totalRow);
-
-                    // Установим минимальную комфортную ширину
-                    ws.Column(1).Width = Math.Max(ws.Column(1).Width, 16);
-                    ws.Column(2).Width = Math.Max(ws.Column(2).Width, 24);
-                    ws.Column(8).Width = Math.Max(ws.Column(8).Width, 14);
-                    ws.Column(10).Width = Math.Max(ws.Column(10).Width, 16);
-                    ws.Column(15).Width = Math.Max(ws.Column(15).Width, 15);
-                    ws.Column(16).Width = Math.Max(ws.Column(16).Width, 18);
-
-                    // Закрепить шапку
-                    ws.SheetView.FreezeRows(headerRow);
-
-                    // Сохранить файл
-                    if (File.Exists(filePath)) File.Delete(filePath);
-                    workbook.SaveAs(filePath);
-                }
-
+                // 3. Генерация OpenXML .xlsx файла через ZipArchive
+                CreateOpenXmlSpreadsheet(sortedCubes, doc.Title, filePath);
                 return true;
             }
             catch (Exception ex)
@@ -241,6 +62,347 @@ namespace BCCPlugIn
                 errorMessage = ex.Message;
                 return false;
             }
+        }
+
+        private static void CreateOpenXmlSpreadsheet(List<FamilyInstance> cubes, string docTitle, string destinationPath)
+        {
+            if (File.Exists(destinationPath))
+            {
+                File.Delete(destinationPath);
+            }
+
+            using (FileStream fs = new FileStream(destinationPath, FileMode.Create, FileAccess.Write))
+            using (ZipArchive zip = new ZipArchive(fs, ZipArchiveMode.Create))
+            {
+                // [Content_Types].xml
+                AddZipEntry(zip, "[Content_Types].xml", GetContentTypesXml());
+
+                // _rels/.rels
+                AddZipEntry(zip, "_rels/.rels", GetRootRelsXml());
+
+                // xl/_rels/workbook.xml.rels
+                AddZipEntry(zip, "xl/_rels/workbook.xml.rels", GetWorkbookRelsXml());
+
+                // xl/workbook.xml
+                AddZipEntry(zip, "xl/workbook.xml", GetWorkbookXml());
+
+                // xl/styles.xml
+                AddZipEntry(zip, "xl/styles.xml", GetStylesXml());
+
+                // xl/worksheets/sheet1.xml
+                AddZipEntry(zip, "xl/worksheets/sheet1.xml", BuildWorksheetXml(cubes, docTitle));
+            }
+        }
+
+        private static void AddZipEntry(ZipArchive zip, string entryName, string content)
+        {
+            ZipArchiveEntry entry = zip.CreateEntry(entryName, CompressionLevel.Optimal);
+            using (Stream stream = entry.Open())
+            using (StreamWriter writer = new StreamWriter(stream, new UTF8Encoding(false)))
+            {
+                writer.Write(content);
+            }
+        }
+
+        private static string GetContentTypesXml()
+        {
+            return "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n" +
+                   "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">\r\n" +
+                   "  <Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>\r\n" +
+                   "  <Default Extension=\"xml\" ContentType=\"application/xml\"/>\r\n" +
+                   "  <Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>\r\n" +
+                   "  <Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>\r\n" +
+                   "  <Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/>\r\n" +
+                   "</Types>";
+        }
+
+        private static string GetRootRelsXml()
+        {
+            return "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n" +
+                   "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\r\n" +
+                   "  <Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/>\r\n" +
+                   "</Relationships>";
+        }
+
+        private static string GetWorkbookRelsXml()
+        {
+            return "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n" +
+                   "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\r\n" +
+                   "  <Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/>\r\n" +
+                   "  <Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/>\r\n" +
+                   "</Relationships>";
+        }
+
+        private static string GetWorkbookXml()
+        {
+            return "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n" +
+                   "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">\r\n" +
+                   "  <sheets>\r\n" +
+                   "    <sheet name=\"Теплопотери\" sheetId=\"1\" r:id=\"rId1\"/>\r\n" +
+                   "  </sheets>\r\n" +
+                   "</workbook>";
+        }
+
+        private static string GetStylesXml()
+        {
+            // Стили:
+            // 0: Normal
+            // 1: Title (Bold 14pt, Red #C91414)
+            // 2: Subtitle (Italic 10pt)
+            // 3: Header (Bold 11pt, White on #1F497D, Center, Border)
+            // 4: Center Text (Border)
+            // 5: Left Text (Border)
+            // 6: Number 0.0 (Right, Border)
+            // 7: Number 0.00 (Right, Border)
+            // 8: Number 0.000 (Right, Border)
+            // 9: Number #,##0.00 (Right, Border)
+            // 10: Zebra Center Text (Fill #F9FAFC)
+            // 11: Zebra Left Text (Fill #F9FAFC)
+            // 12: Zebra Number 0.0
+            // 13: Zebra Number 0.00
+            // 14: Zebra Number 0.000
+            // 15: Zebra Number #,##0.00
+            // 16: Total Label (Bold, Fill #EAEDED, Top/Bottom Border)
+            // 17: Total Number (Bold, Number #,##0.00, Fill #EAEDED, Top/Bottom Border)
+            return "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n" +
+                   "<styleSheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\r\n" +
+                   "  <numFmts count=\"4\">\r\n" +
+                   "    <numFmt numFmtId=\"164\" formatCode=\"0.0\"/>\r\n" +
+                   "    <numFmt numFmtId=\"165\" formatCode=\"0.00\"/>\r\n" +
+                   "    <numFmt numFmtId=\"166\" formatCode=\"0.000\"/>\r\n" +
+                   "    <numFmt numFmtId=\"167\" formatCode=\"#,##0.00\"/>\r\n" +
+                   "  </numFmts>\r\n" +
+                   "  <fonts count=\"5\">\r\n" +
+                   "    <font><sz val=\"11\"/><name val=\"Calibri\"/></font>\r\n" +
+                   "    <font><b/><sz val=\"14\"/><color rgb=\"FFC91414\"/><name val=\"Calibri\"/></font>\r\n" +
+                   "    <font><i/><sz val=\"10\"/><color rgb=\"FF555555\"/><name val=\"Calibri\"/></font>\r\n" +
+                   "    <font><b/><sz val=\"11\"/><color rgb=\"FFFFFFFF\"/><name val=\"Calibri\"/></font>\r\n" +
+                   "    <font><b/><sz val=\"11\"/><name val=\"Calibri\"/></font>\r\n" +
+                   "  </fonts>\r\n" +
+                   "  <fills count=\"5\">\r\n" +
+                   "    <fill><patternFill patternType=\"none\"/></fill>\r\n" +
+                   "    <fill><patternFill patternType=\"gray125\"/></fill>\r\n" +
+                   "    <fill><patternFill patternType=\"solid\"><fgColor rgb=\"FF1F497D\"/></patternFill></fill>\r\n" +
+                   "    <fill><patternFill patternType=\"solid\"><fgColor rgb=\"FFF9FAFC\"/></patternFill></fill>\r\n" +
+                   "    <fill><patternFill patternType=\"solid\"><fgColor rgb=\"FFEAEDED\"/></patternFill></fill>\r\n" +
+                   "  </fills>\r\n" +
+                   "  <borders count=\"3\">\r\n" +
+                   "    <border><left/><right/><top/><bottom/><diagonal/></border>\r\n" +
+                   "    <border><left style=\"thin\"><color rgb=\"FFD0D0D0\"/></left><right style=\"thin\"><color rgb=\"FFD0D0D0\"/></right><top style=\"thin\"><color rgb=\"FFD0D0D0\"/></top><bottom style=\"thin\"><color rgb=\"FFD0D0D0\"/></bottom></border>\r\n" +
+                   "    <border><left/><right/><top style=\"medium\"><color rgb=\"FF2C3E50\"/></top><bottom style=\"double\"><color rgb=\"FF2C3E50\"/></bottom></border>\r\n" +
+                   "  </borders>\r\n" +
+                   "  <cellStyleXfs count=\"1\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\"/></cellStyleXfs>\r\n" +
+                   "  <cellXfs count=\"18\">\r\n" +
+                   "    <xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\"/>\r\n" +
+                   "    <xf numFmtId=\"0\" fontId=\"1\" fillId=\"0\" borderId=\"0\" xfId=\"0\" applyFont=\"1\"/>\r\n" +
+                   "    <xf numFmtId=\"0\" fontId=\"2\" fillId=\"0\" borderId=\"0\" xfId=\"0\" applyFont=\"1\"/>\r\n" +
+                   "    <xf numFmtId=\"0\" fontId=\"3\" fillId=\"2\" borderId=\"1\" xfId=\"0\" applyFont=\"1\" applyFill=\"1\" applyBorder=\"1\" applyAlignment=\"1\"><alignment horizontal=\"center\" vertical=\"center\" wrapText=\"1\"/></xf>\r\n" +
+                   "    <xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"1\" xfId=\"0\" applyBorder=\"1\" applyAlignment=\"1\"><alignment horizontal=\"center\" vertical=\"center\"/></xf>\r\n" +
+                   "    <xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"1\" xfId=\"0\" applyBorder=\"1\" applyAlignment=\"1\"><alignment horizontal=\"left\" vertical=\"center\"/></xf>\r\n" +
+                   "    <xf numFmtId=\"164\" fontId=\"0\" fillId=\"0\" borderId=\"1\" xfId=\"0\" applyNumberFormat=\"1\" applyBorder=\"1\" applyAlignment=\"1\"><alignment horizontal=\"right\" vertical=\"center\"/></xf>\r\n" +
+                   "    <xf numFmtId=\"165\" fontId=\"0\" fillId=\"0\" borderId=\"1\" xfId=\"0\" applyNumberFormat=\"1\" applyBorder=\"1\" applyAlignment=\"1\"><alignment horizontal=\"right\" vertical=\"center\"/></xf>\r\n" +
+                   "    <xf numFmtId=\"166\" fontId=\"0\" fillId=\"0\" borderId=\"1\" xfId=\"0\" applyNumberFormat=\"1\" applyBorder=\"1\" applyAlignment=\"1\"><alignment horizontal=\"right\" vertical=\"center\"/></xf>\r\n" +
+                   "    <xf numFmtId=\"167\" fontId=\"0\" fillId=\"0\" borderId=\"1\" xfId=\"0\" applyNumberFormat=\"1\" applyBorder=\"1\" applyAlignment=\"1\"><alignment horizontal=\"right\" vertical=\"center\"/></xf>\r\n" +
+                   "    <xf numFmtId=\"0\" fontId=\"0\" fillId=\"3\" borderId=\"1\" xfId=\"0\" applyFill=\"1\" applyBorder=\"1\" applyAlignment=\"1\"><alignment horizontal=\"center\" vertical=\"center\"/></xf>\r\n" +
+                   "    <xf numFmtId=\"0\" fontId=\"0\" fillId=\"3\" borderId=\"1\" xfId=\"0\" applyFill=\"1\" applyBorder=\"1\" applyAlignment=\"1\"><alignment horizontal=\"left\" vertical=\"center\"/></xf>\r\n" +
+                   "    <xf numFmtId=\"164\" fontId=\"0\" fillId=\"3\" borderId=\"1\" xfId=\"0\" applyNumberFormat=\"1\" applyFill=\"1\" applyBorder=\"1\" applyAlignment=\"1\"><alignment horizontal=\"right\" vertical=\"center\"/></xf>\r\n" +
+                   "    <xf numFmtId=\"165\" fontId=\"0\" fillId=\"3\" borderId=\"1\" xfId=\"0\" applyNumberFormat=\"1\" applyFill=\"1\" applyBorder=\"1\" applyAlignment=\"1\"><alignment horizontal=\"right\" vertical=\"center\"/></xf>\r\n" +
+                   "    <xf numFmtId=\"166\" fontId=\"0\" fillId=\"3\" borderId=\"1\" xfId=\"0\" applyNumberFormat=\"1\" applyFill=\"1\" applyBorder=\"1\" applyAlignment=\"1\"><alignment horizontal=\"right\" vertical=\"center\"/></xf>\r\n" +
+                   "    <xf numFmtId=\"167\" fontId=\"0\" fillId=\"3\" borderId=\"1\" xfId=\"0\" applyNumberFormat=\"1\" applyFill=\"1\" applyBorder=\"1\" applyAlignment=\"1\"><alignment horizontal=\"right\" vertical=\"center\"/></xf>\r\n" +
+                   "    <xf numFmtId=\"0\" fontId=\"4\" fillId=\"4\" borderId=\"2\" xfId=\"0\" applyFont=\"1\" applyFill=\"1\" applyBorder=\"1\" applyAlignment=\"1\"><alignment horizontal=\"right\" vertical=\"center\"/></xf>\r\n" +
+                   "    <xf numFmtId=\"167\" fontId=\"4\" fillId=\"4\" borderId=\"2\" xfId=\"0\" applyNumberFormat=\"1\" applyFont=\"1\" applyFill=\"1\" applyBorder=\"1\" applyAlignment=\"1\"><alignment horizontal=\"right\" vertical=\"center\"/></xf>\r\n" +
+                   "  </cellXfs>\r\n" +
+                   "</styleSheet>";
+        }
+
+        private static string BuildWorksheetXml(List<FamilyInstance> cubes, string docTitle)
+        {
+            var sb = new StringBuilder(16384);
+            sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
+            sb.AppendLine("<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">");
+
+            // Sheet Views (Freeze Header at row 4)
+            sb.AppendLine("  <sheetViews>");
+            sb.AppendLine("    <sheetView tabSelected=\"1\" workbookViewId=\"0\">");
+            sb.AppendLine("      <pane ySplit=\"4\" topLeftCell=\"A5\" activePane=\"bottomLeft\" state=\"frozen\"/>");
+            sb.AppendLine("    </sheetView>");
+            sb.AppendLine("  </sheetViews>");
+
+            // Column Widths
+            sb.AppendLine("  <cols>");
+            sb.AppendLine("    <col min=\"1\" max=\"1\" width=\"18\" customWidth=\"1\"/>");
+            sb.AppendLine("    <col min=\"2\" max=\"2\" width=\"28\" customWidth=\"1\"/>");
+            sb.AppendLine("    <col min=\"3\" max=\"4\" width=\"13\" customWidth=\"1\"/>");
+            sb.AppendLine("    <col min=\"5\" max=\"5\" width=\"16\" customWidth=\"1\"/>");
+            sb.AppendLine("    <col min=\"6\" max=\"6\" width=\"16\" customWidth=\"1\"/>");
+            sb.AppendLine("    <col min=\"7\" max=\"7\" width=\"14\" customWidth=\"1\"/>");
+            sb.AppendLine("    <col min=\"8\" max=\"8\" width=\"16\" customWidth=\"1\"/>");
+            sb.AppendLine("    <col min=\"9\" max=\"9\" width=\"13\" customWidth=\"1\"/>");
+            sb.AppendLine("    <col min=\"10\" max=\"10\" width=\"18\" customWidth=\"1\"/>");
+            sb.AppendLine("    <col min=\"11\" max=\"14\" width=\"14\" customWidth=\"1\"/>");
+            sb.AppendLine("    <col min=\"15\" max=\"15\" width=\"16\" customWidth=\"1\"/>");
+            sb.AppendLine("    <col min=\"16\" max=\"16\" width=\"20\" customWidth=\"1\"/>");
+            sb.AppendLine("  </cols>");
+
+            sb.AppendLine("  <sheetData>");
+
+            // Row 1: Title
+            sb.AppendLine("    <row r=\"1\" ht=\"24\" customHeight=\"1\">");
+            sb.AppendLine("      <c r=\"A1\" t=\"inlineStr\" s=\"1\"><is><t>BIMBCC | Расчёт теплопотерь ограждающих конструкций</t></is></c>");
+            sb.AppendLine("    </row>");
+
+            // Row 2: Subtitle
+            string subText = EscapeXml($"Проект: {docTitle} | Дата экспорта: {DateTime.Now:dd.MM.yyyy HH:mm}");
+            sb.AppendLine("    <row r=\"2\" ht=\"18\" customHeight=\"1\">");
+            sb.AppendLine($"      <c r=\"A2\" t=\"inlineStr\" s=\"2\"><is><t>{subText}</t></is></c>");
+            sb.AppendLine("    </row>");
+
+            // Row 3: Empty
+            sb.AppendLine("    <row r=\"3\" ht=\"10\" customHeight=\"1\"/>");
+
+            // Row 4: Table Headers
+            sb.AppendLine("    <row r=\"4\" ht=\"28\" customHeight=\"1\">");
+            string[] headers = new[]
+            {
+                "Номер помещения",
+                "Имя помещения",
+                "t нар, °C",
+                "t вн, °C",
+                "Тип помещения",
+                "Конструкция",
+                "Ориентация",
+                "Площадь A, м²",
+                "Коэфф. n",
+                "Коэфф. k, Вт/(м²·°C)",
+                "Надбавка b1",
+                "Надбавка b2",
+                "Надбавка b3",
+                "Надбавка b4",
+                "Коэфф. надбавки",
+                "Теплопотери Q, Вт"
+            };
+
+            for (int c = 0; c < headers.Length; c++)
+            {
+                string colLetter = GetColumnLetter(c + 1);
+                sb.AppendLine($"      <c r=\"{colLetter}4\" t=\"inlineStr\" s=\"3\"><is><t>{EscapeXml(headers[c])}</t></is></c>");
+            }
+            sb.AppendLine("    </row>");
+
+            // Data Rows
+            int startRow = 5;
+            int r = startRow;
+            var ci = CultureInfo.InvariantCulture;
+
+            foreach (var cube in cubes)
+            {
+                bool isZebra = ((r - startRow) % 2 == 1);
+                int sCenter = isZebra ? 10 : 4;
+                int sLeft   = isZebra ? 11 : 5;
+                int sNum1   = isZebra ? 12 : 6; // 0.0
+                int sNum2   = isZebra ? 13 : 7; // 0.00
+                int sNum3   = isZebra ? 14 : 8; // 0.000
+                int sNumQ   = isZebra ? 15 : 9; // #,##0.00
+
+                string roomNum     = EscapeXml(GetParamString(cube, HeatLossEngine.P_ROOM_NUMBER));
+                string roomName    = EscapeXml(GetParamString(cube, HeatLossEngine.P_ROOM_NAME));
+                double tempOut     = GetParamDouble(cube, HeatLossEngine.P_TEMP_OUT);
+                double tempIn      = GetParamDouble(cube, HeatLossEngine.P_TEMP_IN);
+                string cornerType  = EscapeXml(GetParamString(cube, HeatLossEngine.P_CORNER_TYPE));
+                string constrLabel = EscapeXml(GetParamString(cube, HeatLossEngine.P_CONSTR_LABEL));
+                string orient      = EscapeXml(GetParamString(cube, HeatLossEngine.P_ORIENTATION));
+                double area        = GetParamDouble(cube, HeatLossEngine.P_AREA);
+                double coeffN      = GetParamDouble(cube, HeatLossEngine.P_COEFF_N);
+                double coeffK      = GetParamDouble(cube, HeatLossEngine.P_COEFF_K);
+                double b1          = GetParamDouble(cube, HeatLossEngine.P_ADD_B1);
+                double b2          = GetParamDouble(cube, HeatLossEngine.P_ADD_B2);
+                double b3          = GetParamDouble(cube, HeatLossEngine.P_ADD_B3);
+                double b4          = GetParamDouble(cube, HeatLossEngine.P_ADD_B4);
+
+                double coeffAddCalc = Math.Round(1.0 + b1 + b2 + b3 + b4, 4);
+                double qCalc = Math.Round(area * coeffK * (tempIn - tempOut) * coeffN * coeffAddCalc, 2);
+
+                sb.AppendLine($"    <row r=\"{r}\" ht=\"20\" customHeight=\"1\">");
+                sb.AppendLine($"      <c r=\"A{r}\" t=\"inlineStr\" s=\"{sCenter}\"><is><t>{roomNum}</t></is></c>");
+                sb.AppendLine($"      <c r=\"B{r}\" t=\"inlineStr\" s=\"{sLeft}\"><is><t>{roomName}</t></is></c>");
+                sb.AppendLine($"      <c r=\"C{r}\" s=\"{sNum1}\"><v>{tempOut.ToString("F1", ci)}</v></c>");
+                sb.AppendLine($"      <c r=\"D{r}\" s=\"{sNum1}\"><v>{tempIn.ToString("F1", ci)}</v></c>");
+                sb.AppendLine($"      <c r=\"E{r}\" t=\"inlineStr\" s=\"{sCenter}\"><is><t>{cornerType}</t></is></c>");
+                sb.AppendLine($"      <c r=\"F{r}\" t=\"inlineStr\" s=\"{sCenter}\"><is><t>{constrLabel}</t></is></c>");
+                sb.AppendLine($"      <c r=\"G{r}\" t=\"inlineStr\" s=\"{sCenter}\"><is><t>{orient}</t></is></c>");
+                sb.AppendLine($"      <c r=\"H{r}\" s=\"{sNum2}\"><v>{area.ToString("F2", ci)}</v></c>");
+                sb.AppendLine($"      <c r=\"I{r}\" s=\"{sNum1}\"><v>{coeffN.ToString("F1", ci)}</v></c>");
+                sb.AppendLine($"      <c r=\"J{r}\" s=\"{sNum3}\"><v>{coeffK.ToString("F3", ci)}</v></c>");
+                sb.AppendLine($"      <c r=\"K{r}\" s=\"{sNum2}\"><v>{b1.ToString("F2", ci)}</v></c>");
+                sb.AppendLine($"      <c r=\"L{r}\" s=\"{sNum2}\"><v>{b2.ToString("F2", ci)}</v></c>");
+                sb.AppendLine($"      <c r=\"M{r}\" s=\"{sNum2}\"><v>{b3.ToString("F2", ci)}</v></c>");
+                sb.AppendLine($"      <c r=\"N{r}\" s=\"{sNum2}\"><v>{b4.ToString("F2", ci)}</v></c>");
+
+                // ФОРМУЛА: Коэффициент надбавки (O) = 1 + b1 + b2 + b3 + b4
+                sb.AppendLine($"      <c r=\"O{r}\" s=\"{sNum2}\"><f>1+K{r}+L{r}+M{r}+N{r}</f><v>{coeffAddCalc.ToString("F2", ci)}</v></c>");
+
+                // ФОРМУЛА: Теплопотери Q (P) = ROUND(H * J * (D - C) * I * O, 2)
+                sb.AppendLine($"      <c r=\"P{r}\" s=\"{sNumQ}\"><f>ROUND(H{r}*J{r}*(D{r}-C{r})*I{r}*O{r}, 2)</f><v>{qCalc.ToString("F2", ci)}</v></c>");
+
+                sb.AppendLine("    </row>");
+                r++;
+            }
+
+            int lastDataRow = r - 1;
+            int totalRow = r;
+
+            // Строка ИТОГО ПО ЗДАНИЮ
+            sb.AppendLine($"    <row r=\"{totalRow}\" ht=\"24\" customHeight=\"1\">");
+            sb.AppendLine($"      <c r=\"A{totalRow}\" t=\"inlineStr\" s=\"16\"><is><t>ИТОГО ПО ЗДАНИЮ:</t></is></c>");
+            sb.AppendLine($"      <c r=\"B{totalRow}\" s=\"16\"/>");
+            sb.AppendLine($"      <c r=\"C{totalRow}\" s=\"16\"/>");
+            sb.AppendLine($"      <c r=\"D{totalRow}\" s=\"16\"/>");
+            sb.AppendLine($"      <c r=\"E{totalRow}\" s=\"16\"/>");
+            sb.AppendLine($"      <c r=\"F{totalRow}\" s=\"16\"/>");
+            sb.AppendLine($"      <c r=\"G{totalRow}\" s=\"16\"/>");
+            sb.AppendLine($"      <c r=\"H{totalRow}\" s=\"17\"><f>SUM(H{startRow}:H{lastDataRow})</f></c>");
+            sb.AppendLine($"      <c r=\"I{totalRow}\" s=\"16\"/>");
+            sb.AppendLine($"      <c r=\"J{totalRow}\" s=\"16\"/>");
+            sb.AppendLine($"      <c r=\"K{totalRow}\" s=\"16\"/>");
+            sb.AppendLine($"      <c r=\"L{totalRow}\" s=\"16\"/>");
+            sb.AppendLine($"      <c r=\"M{totalRow}\" s=\"16\"/>");
+            sb.AppendLine($"      <c r=\"N{totalRow}\" s=\"16\"/>");
+            sb.AppendLine($"      <c r=\"O{totalRow}\" s=\"16\"/>");
+            sb.AppendLine($"      <c r=\"P{totalRow}\" s=\"17\"><f>SUM(P{startRow}:P{lastDataRow})</f></c>");
+            sb.AppendLine("    </row>");
+
+            sb.AppendLine("  </sheetData>");
+
+            // Merge cells for Total label A{totalRow}:G{totalRow}
+            sb.AppendLine("  <mergeCells count=\"1\">");
+            sb.AppendLine($"    <mergeCell ref=\"A{totalRow}:G{totalRow}\"/>");
+            sb.AppendLine("  </mergeCells>");
+
+            sb.AppendLine("</worksheet>");
+            return sb.ToString();
+        }
+
+        private static string GetColumnLetter(int colIndex)
+        {
+            int div = colIndex;
+            string colLetter = String.Empty;
+            while (div > 0)
+            {
+                int mod = (div - 1) % 26;
+                colLetter = (char)(65 + mod) + colLetter;
+                div = (int)((div - mod) / 26);
+            }
+            return colLetter;
+        }
+
+        private static string EscapeXml(string input)
+        {
+            if (string.IsNullOrEmpty(input)) return "";
+            return input.Replace("&", "&amp;")
+                        .Replace("<", "&lt;")
+                        .Replace(">", "&gt;")
+                        .Replace("\"", "&quot;")
+                        .Replace("'", "&apos;");
         }
 
         private static string GetParamString(Element elem, string paramName)
@@ -269,7 +431,7 @@ namespace BCCPlugIn
                 {
                     if (p.StorageType == StorageType.Double) return Math.Round(p.AsDouble(), 4);
                     if (p.StorageType == StorageType.Integer) return p.AsInteger();
-                    if (double.TryParse(p.AsString().Replace(',', '.'), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double val))
+                    if (double.TryParse(p.AsString().Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out double val))
                         return val;
                 }
             }
