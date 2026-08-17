@@ -1126,15 +1126,38 @@ namespace BCCPlugIn
 
                     if (worldPt == null) continue;
 
-                    // Проверка близости проёма к габаритам пространства (с допуском 5 футов / 1.5 м)
+                    // 1. Проверка близости проёма к габаритам пространства (с допуском 4 фута / 1.2 м)
                     if (spaceBbox != null)
                     {
-                        double tol = 5.0;
+                        double tol = 4.0;
                         if (worldPt.X < spaceBbox.Min.X - tol || worldPt.X > spaceBbox.Max.X + tol ||
                             worldPt.Y < spaceBbox.Min.Y - tol || worldPt.Y > spaceBbox.Max.Y + tol ||
                             worldPt.Z < spaceBbox.Min.Z - tol || worldPt.Z > spaceBbox.Max.Z + tol)
                         {
                             continue;
+                        }
+                    }
+
+                    // 2. Проверка расположения проема строго в створе сегмента стены текущего помещения
+                    if (seg != null && seg.GetCurve() != null)
+                    {
+                        Curve segCurve = seg.GetCurve();
+                        XYZ p0 = segCurve.GetEndPoint(0);
+                        XYZ p1 = segCurve.GetEndPoint(1);
+                        XYZ vSeg = p1 - p0;
+                        double lenSeg = vSeg.GetLength();
+                        if (lenSeg > 0.05)
+                        {
+                            XYZ uSeg = vSeg.Normalize();
+                            XYZ toPt = worldPt - p0;
+                            double proj = toPt.DotProduct(uSeg);
+                            double distPerp = (toPt - uSeg * proj).GetLength();
+
+                            // Допуск по длине сегмента 1.5 фута (0.45 м) и перпендикулярно стене 3.5 фута (1.0 м)
+                            if (proj < -1.5 || proj > lenSeg + 1.5 || distPerp > 3.5)
+                            {
+                                continue;
+                            }
                         }
                     }
 
@@ -1216,31 +1239,7 @@ namespace BCCPlugIn
                 // 1. Двери и Окна (проемы)
                 if (cat == BuiltInCategory.OST_Doors || cat == BuiltInCategory.OST_Windows)
                 {
-                    Parameter widthParam  = elem.get_Parameter(BuiltInParameter.DOOR_WIDTH)
-                                         ?? elem.get_Parameter(BuiltInParameter.CASEWORK_WIDTH)
-                                         ?? elem.get_Parameter(BuiltInParameter.WINDOW_WIDTH);
-                    Parameter heightParam = elem.get_Parameter(BuiltInParameter.DOOR_HEIGHT)
-                                         ?? elem.get_Parameter(BuiltInParameter.CASEWORK_HEIGHT)
-                                         ?? elem.get_Parameter(BuiltInParameter.WINDOW_HEIGHT);
-
-                    lengthMm = (widthParam != null && widthParam.HasValue) ? widthParam.AsDouble() * ft2mm : 0;
-                    heightMm = (heightParam != null && heightParam.HasValue) ? heightParam.AsDouble() * ft2mm : 0;
-
-                    if (lengthMm == 0 || heightMm == 0)
-                    {
-                        BoundingBoxXYZ bb = elem.get_BoundingBox(null);
-                        if (bb != null)
-                        {
-                            double dx = Math.Abs(bb.Max.X - bb.Min.X);
-                            double dy = Math.Abs(bb.Max.Y - bb.Min.Y);
-                            double dz = Math.Abs(bb.Max.Z - bb.Min.Z);
-
-                            if (lengthMm == 0) lengthMm = Math.Max(dx, dy) * ft2mm;
-                            if (heightMm == 0) heightMm = dz * ft2mm;
-                        }
-                    }
-
-                    areaSqM = (lengthMm / 1000.0) * (heightMm / 1000.0);
+                    GetOpeningDimensions(elem, cat, out lengthMm, out heightMm, out areaSqM);
                 }
                 // 2. Перекрытия, полы, потолки
                 else if (cat == BuiltInCategory.OST_Floors ||
@@ -1940,6 +1939,194 @@ namespace BCCPlugIn
                 return (BuiltInCategory)elem.Category.Id.IntegerValue;
 #pragma warning restore CS0618
             }
+        }
+        private static void GetOpeningDimensions(
+            Element elem,
+            BuiltInCategory cat,
+            out double widthMm,
+            out double heightMm,
+            out double areaSqM)
+        {
+            widthMm = 0;
+            heightMm = 0;
+            areaSqM = 0;
+
+            if (elem == null) return;
+            const double ft2mm = 304.8;
+
+            // 1. Поиск параметров ширины и высоты на экземпляре и на типе (ADSK, ГОСТ, стандартные)
+            Element typeElem = null;
+            if (elem is FamilyInstance fi && fi.Symbol != null)
+            {
+                typeElem = fi.Symbol;
+            }
+            else if (elem.Document != null)
+            {
+                ElementId typeId = elem.GetTypeId();
+                if (typeId != null && typeId != ElementId.InvalidElementId)
+                    typeElem = elem.Document.GetElement(typeId);
+            }
+
+            double wFt = FindDimensionParam(elem, typeElem, new[]
+            {
+                "ADSK_Размер_Ширина", "ADSK_Размер_Ширина проема", "Ширина", "Ширина проема",
+                "Ширина_Проема", "Ширина окна", "Ширина двери", "Width", "Rough Width", "Размер_Ширина",
+                "Примерная ширина", "Габаритная ширина"
+            }, new[]
+            {
+                BuiltInParameter.WINDOW_WIDTH, BuiltInParameter.DOOR_WIDTH,
+                BuiltInParameter.GENERIC_WIDTH, BuiltInParameter.FAMILY_WIDTH_PARAM,
+                BuiltInParameter.CASEWORK_WIDTH
+            });
+
+            double hFt = FindDimensionParam(elem, typeElem, new[]
+            {
+                "ADSK_Размер_Высота", "ADSK_Размер_Высота проема", "Высота", "Высота проема",
+                "Высота_Проема", "Высота окна", "Высота двери", "Height", "Rough Height", "Размер_Высота",
+                "Примерная высота", "Габаритная высота"
+            }, new[]
+            {
+                BuiltInParameter.WINDOW_HEIGHT, BuiltInParameter.DOOR_HEIGHT,
+                BuiltInParameter.GENERIC_HEIGHT, BuiltInParameter.FAMILY_HEIGHT_PARAM,
+                BuiltInParameter.CASEWORK_HEIGHT
+            });
+
+            if (wFt > 0.05 && hFt > 0.05)
+            {
+                widthMm = Math.Round(wFt * ft2mm, 1);
+                heightMm = Math.Round(hFt * ft2mm, 1);
+                areaSqM = Math.Round((widthMm / 1000.0) * (heightMm / 1000.0), 2);
+                return;
+            }
+
+            // 2. Если параметры не найдены - используем точную геометрическую ориентацию вдоль стены
+            try
+            {
+                BoundingBoxXYZ bb = elem.get_BoundingBox(null);
+                if (bb != null)
+                {
+                    double dz = Math.Abs(bb.Max.Z - bb.Min.Z);
+                    heightMm = Math.Round(dz * ft2mm, 1);
+
+                    if (elem is FamilyInstance finst)
+                    {
+                        XYZ handDir = finst.HandOrientation;
+                        if (handDir != null && handDir.GetLength() > 0.01)
+                        {
+                            XYZ uHand = new XYZ(handDir.X, handDir.Y, 0).Normalize();
+                            XYZ min = bb.Min;
+                            XYZ max = bb.Max;
+                            XYZ[] pts = new XYZ[]
+                            {
+                                new XYZ(min.X, min.Y, min.Z),
+                                new XYZ(max.X, min.Y, min.Z),
+                                new XYZ(min.X, max.Y, min.Z),
+                                new XYZ(max.X, max.Y, min.Z),
+                                new XYZ(min.X, min.Y, max.Z),
+                                new XYZ(max.X, min.Y, max.Z),
+                                new XYZ(min.X, max.Y, max.Z),
+                                new XYZ(max.X, max.Y, max.Z)
+                            };
+
+                            double minProj = double.MaxValue;
+                            double maxProj = double.MinValue;
+                            foreach (XYZ pt in pts)
+                            {
+                                double p = pt.X * uHand.X + pt.Y * uHand.Y;
+                                if (p < minProj) minProj = p;
+                                if (p > maxProj) maxProj = p;
+                            }
+                            double wProjFt = Math.Max(0, maxProj - minProj);
+                            if (wProjFt > 0.1) widthMm = Math.Round(wProjFt * ft2mm, 1);
+                        }
+                    }
+
+                    if (widthMm == 0)
+                    {
+                        double dx = Math.Abs(bb.Max.X - bb.Min.X);
+                        double dy = Math.Abs(bb.Max.Y - bb.Min.Y);
+                        widthMm = Math.Round(Math.Sqrt(dx * dx + dy * dy) * 0.707 * ft2mm, 1);
+                    }
+
+                    areaSqM = Math.Round((widthMm / 1000.0) * (heightMm / 1000.0), 2);
+                }
+            }
+            catch { }
+        }
+
+        private static double FindDimensionParam(Element instElem, Element typeElem, string[] textNames, BuiltInParameter[] bipNames)
+        {
+            // 1. Поиск по BuiltInParameter на экземпляре
+            if (instElem != null && bipNames != null)
+            {
+                foreach (var bip in bipNames)
+                {
+                    try
+                    {
+                        Parameter p = instElem.get_Parameter(bip);
+                        if (p != null && p.HasValue && p.StorageType == StorageType.Double && p.AsDouble() > 0.05)
+                            return p.AsDouble();
+                    }
+                    catch { }
+                }
+            }
+
+            // 2. Поиск по BuiltInParameter на ТИПЕ
+            if (typeElem != null && bipNames != null)
+            {
+                foreach (var bip in bipNames)
+                {
+                    try
+                    {
+                        Parameter p = typeElem.get_Parameter(bip);
+                        if (p != null && p.HasValue && p.StorageType == StorageType.Double && p.AsDouble() > 0.05)
+                            return p.AsDouble();
+                    }
+                    catch { }
+                }
+            }
+
+            // 3. Поиск по имени на экземпляре
+            if (instElem != null && textNames != null)
+            {
+                foreach (string name in textNames)
+                {
+                    try
+                    {
+                        Parameter p = instElem.LookupParameter(name);
+                        if (p != null && p.HasValue)
+                        {
+                            if (p.StorageType == StorageType.Double && p.AsDouble() > 0.05)
+                                return p.AsDouble();
+                            if (p.StorageType == StorageType.String && double.TryParse(p.AsString().Replace(',', '.'), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double v) && v > 0.05)
+                                return (v > 10.0) ? (v / 304.8) : v;
+                        }
+                    }
+                    catch { }
+                }
+            }
+
+            // 4. Поиск по имени на ТИПЕ
+            if (typeElem != null && textNames != null)
+            {
+                foreach (string name in textNames)
+                {
+                    try
+                    {
+                        Parameter p = typeElem.LookupParameter(name);
+                        if (p != null && p.HasValue)
+                        {
+                            if (p.StorageType == StorageType.Double && p.AsDouble() > 0.05)
+                                return p.AsDouble();
+                            if (p.StorageType == StorageType.String && double.TryParse(p.AsString().Replace(',', '.'), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double v) && v > 0.05)
+                                return (v > 10.0) ? (v / 304.8) : v;
+                        }
+                    }
+                    catch { }
+                }
+            }
+
+            return 0.0;
         }
     }
 }
