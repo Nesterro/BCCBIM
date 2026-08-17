@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Mechanical;
@@ -1950,11 +1951,12 @@ namespace BCCPlugIn
             widthMm = 0;
             heightMm = 0;
             areaSqM = 0;
-
             if (elem == null) return;
-            const double ft2mm = 304.8;
 
-            // 1. Поиск параметров ширины и высоты на экземпляре и на типе (ADSK, ГОСТ, стандартные)
+            double bestWidthM = 0;
+            double bestHeightM = 0;
+
+            // 1. Сбор типа элемента
             Element typeElem = null;
             if (elem is FamilyInstance fi && fi.Symbol != null)
             {
@@ -1967,166 +1969,217 @@ namespace BCCPlugIn
                     typeElem = elem.Document.GetElement(typeId);
             }
 
-            double wFt = FindDimensionParam(elem, typeElem, new[]
-            {
-                "ADSK_Размер_Ширина", "ADSK_Размер_Ширина проема", "Ширина", "Ширина проема",
-                "Ширина_Проема", "Ширина окна", "Ширина двери", "Width", "Rough Width", "Размер_Ширина",
-                "Примерная ширина", "Габаритная ширина"
-            }, new[]
-            {
-                BuiltInParameter.WINDOW_WIDTH, BuiltInParameter.DOOR_WIDTH,
-                BuiltInParameter.GENERIC_WIDTH, BuiltInParameter.FAMILY_WIDTH_PARAM,
-                BuiltInParameter.CASEWORK_WIDTH
-            });
+            // 2. Сканируем ВСЕ параметры экземпляра и типа по маске "ширин/width" и "высот/height"
+            bestWidthM = ScanOpeningDimension(elem, typeElem, true);
+            bestHeightM = ScanOpeningDimension(elem, typeElem, false);
 
-            double hFt = FindDimensionParam(elem, typeElem, new[]
+            // 3. Если параметры не дали адекватных размеров (в пределах 0.25 м .. 10.0 м),
+            // извлекаем размеры напрямую из 3D геометрии семейства (Solid / BoundingBox вдоль вектора HandOrientation)
+            if (bestWidthM < 0.25 || bestHeightM < 0.25 || bestWidthM > 12.0 || bestHeightM > 12.0)
             {
-                "ADSK_Размер_Высота", "ADSK_Размер_Высота проема", "Высота", "Высота проема",
-                "Высота_Проема", "Высота окна", "Высота двери", "Height", "Rough Height", "Размер_Высота",
-                "Примерная высота", "Габаритная высота"
-            }, new[]
-            {
-                BuiltInParameter.WINDOW_HEIGHT, BuiltInParameter.DOOR_HEIGHT,
-                BuiltInParameter.GENERIC_HEIGHT, BuiltInParameter.FAMILY_HEIGHT_PARAM,
-                BuiltInParameter.CASEWORK_HEIGHT
-            });
-
-            if (wFt > 0.05 && hFt > 0.05)
-            {
-                widthMm = Math.Round(wFt * ft2mm, 1);
-                heightMm = Math.Round(hFt * ft2mm, 1);
-                areaSqM = Math.Round((widthMm / 1000.0) * (heightMm / 1000.0), 2);
-                return;
+                GetOpeningDimensionsFromGeometry(elem, out double geomWM, out double geomHM);
+                if (geomWM >= 0.25 && (bestWidthM < 0.25 || bestWidthM > 12.0)) bestWidthM = geomWM;
+                if (geomHM >= 0.25 && (bestHeightM < 0.25 || bestHeightM > 12.0)) bestHeightM = geomHM;
             }
 
-            // 2. Если параметры не найдены - используем точную геометрическую ориентацию вдоль стены
-            try
+            // 4. Попытка распарсить размеры из имени типоразмера (например "ОК 1 (2140x1930)" или "2140 x 1930(h)")
+            if (bestWidthM < 0.25 || bestHeightM < 0.25)
             {
-                BoundingBoxXYZ bb = elem.get_BoundingBox(null);
-                if (bb != null)
+                string typeName = typeElem != null ? typeElem.Name : (elem.Name ?? "");
+                ParseDimensionsFromName(typeName, ref bestWidthM, ref bestHeightM);
+            }
+
+            // Разумные значения по умолчанию, если ничего не определилось
+            if (bestWidthM < 0.25) bestWidthM = (cat == BuiltInCategory.OST_Doors) ? 0.90 : 1.50;
+            if (bestHeightM < 0.25) bestHeightM = (cat == BuiltInCategory.OST_Doors) ? 2.10 : 1.50;
+
+            widthMm = Math.Round(bestWidthM * 1000.0, 1);
+            heightMm = Math.Round(bestHeightM * 1000.0, 1);
+            areaSqM = Math.Round(bestWidthM * bestHeightM, 2);
+        }
+
+        private static double ScanOpeningDimension(Element instElem, Element typeElem, bool isWidth)
+        {
+            // Приоритетные встроенные параметры
+            BuiltInParameter[] bips = isWidth
+                ? new[] { BuiltInParameter.WINDOW_WIDTH, BuiltInParameter.DOOR_WIDTH, BuiltInParameter.FAMILY_WIDTH_PARAM, BuiltInParameter.GENERIC_WIDTH, BuiltInParameter.CASEWORK_WIDTH }
+                : new[] { BuiltInParameter.WINDOW_HEIGHT, BuiltInParameter.DOOR_HEIGHT, BuiltInParameter.FAMILY_HEIGHT_PARAM, BuiltInParameter.GENERIC_HEIGHT, BuiltInParameter.CASEWORK_HEIGHT };
+
+            // 1. Проверяем BIP на типе
+            if (typeElem != null)
+            {
+                foreach (var bip in bips)
                 {
-                    double dz = Math.Abs(bb.Max.Z - bb.Min.Z);
-                    heightMm = Math.Round(dz * ft2mm, 1);
-
-                    if (elem is FamilyInstance finst)
+                    try
                     {
-                        XYZ handDir = finst.HandOrientation;
-                        if (handDir != null && handDir.GetLength() > 0.01)
+                        Parameter p = typeElem.get_Parameter(bip);
+                        if (p != null && p.HasValue && p.StorageType == StorageType.Double)
                         {
-                            XYZ uHand = new XYZ(handDir.X, handDir.Y, 0).Normalize();
-                            XYZ min = bb.Min;
-                            XYZ max = bb.Max;
-                            XYZ[] pts = new XYZ[]
-                            {
-                                new XYZ(min.X, min.Y, min.Z),
-                                new XYZ(max.X, min.Y, min.Z),
-                                new XYZ(min.X, max.Y, min.Z),
-                                new XYZ(max.X, max.Y, min.Z),
-                                new XYZ(min.X, min.Y, max.Z),
-                                new XYZ(max.X, min.Y, max.Z),
-                                new XYZ(min.X, max.Y, max.Z),
-                                new XYZ(max.X, max.Y, max.Z)
-                            };
-
-                            double minProj = double.MaxValue;
-                            double maxProj = double.MinValue;
-                            foreach (XYZ pt in pts)
-                            {
-                                double p = pt.X * uHand.X + pt.Y * uHand.Y;
-                                if (p < minProj) minProj = p;
-                                if (p > maxProj) maxProj = p;
-                            }
-                            double wProjFt = Math.Max(0, maxProj - minProj);
-                            if (wProjFt > 0.1) widthMm = Math.Round(wProjFt * ft2mm, 1);
+                            double valFt = p.AsDouble();
+                            double valM = valFt * 0.3048;
+                            if (valM >= 0.25 && valM <= 12.0) return valM;
                         }
                     }
+                    catch { }
+                }
+            }
 
-                    if (widthMm == 0)
+            // 2. Проверяем BIP на экземпляре
+            if (instElem != null)
+            {
+                foreach (var bip in bips)
+                {
+                    try
                     {
-                        double dx = Math.Abs(bb.Max.X - bb.Min.X);
-                        double dy = Math.Abs(bb.Max.Y - bb.Min.Y);
-                        widthMm = Math.Round(Math.Sqrt(dx * dx + dy * dy) * 0.707 * ft2mm, 1);
+                        Parameter p = instElem.get_Parameter(bip);
+                        if (p != null && p.HasValue && p.StorageType == StorageType.Double)
+                        {
+                            double valFt = p.AsDouble();
+                            double valM = valFt * 0.3048;
+                            if (valM >= 0.25 && valM <= 12.0) return valM;
+                        }
                     }
+                    catch { }
+                }
+            }
 
-                    areaSqM = Math.Round((widthMm / 1000.0) * (heightMm / 1000.0), 2);
+            // 3. Поиск по ключевым именам параметров в порядке приоритета
+            string[] keywords = isWidth
+                ? new[] { "adsk_размер_ширина", "ширина проема", "ширина_проема", "ширина окна", "ширина двери", "примерная ширина", "габаритная ширина", "ширина", "width", "rough width", "размер_ширина" }
+                : new[] { "adsk_размер_высота", "высота проема", "высота_проема", "высота окна", "высота двери", "примерная высота", "габаритная высота", "высота", "height", "rough height", "размер_высота" };
+
+            Element[] targets = new[] { typeElem, instElem };
+            foreach (var target in targets)
+            {
+                if (target == null) continue;
+
+                // Точное совпадение по списку
+                foreach (string kw in keywords)
+                {
+                    Parameter p = target.LookupParameter(kw);
+                    if (p != null && p.HasValue)
+                    {
+                        double parsed = ExtractParamValueInMeters(p);
+                        if (parsed >= 0.25 && parsed <= 12.0) return parsed;
+                    }
+                }
+
+                // Общий перебор всех параметров объекта, если точные имена не совпали
+                foreach (Parameter p in target.Parameters)
+                {
+                    if (p == null || p.Definition == null || !p.HasValue) continue;
+                    string pName = p.Definition.Name.ToLowerInvariant();
+
+                    bool match = isWidth
+                        ? (pName.Contains("ширин") || pName.Contains("width"))
+                        : (pName.Contains("высот") || pName.Contains("height"));
+
+                    if (match && !pName.Contains("рамы") && !pName.Contains("коробк") && !pName.Contains("подокон") && !pName.Contains("откос"))
+                    {
+                        double parsed = ExtractParamValueInMeters(p);
+                        if (parsed >= 0.25 && parsed <= 12.0) return parsed;
+                    }
+                }
+            }
+
+            return 0.0;
+        }
+
+        private static double ExtractParamValueInMeters(Parameter p)
+        {
+            if (p == null || !p.HasValue) return 0.0;
+            if (p.StorageType == StorageType.Double)
+            {
+                double raw = p.AsDouble();
+                // В Revit API длина хранится в футах (1 фут = 0.3048 м).
+                // Но если в параметр записали число в мм (например 2140):
+                if (raw > 50.0) return raw / 1000.0;
+                return raw * 0.3048;
+            }
+            if (p.StorageType == StorageType.Integer)
+            {
+                int rawInt = p.AsInteger();
+                if (rawInt > 50) return rawInt / 1000.0;
+                return rawInt * 0.3048;
+            }
+            if (p.StorageType == StorageType.String)
+            {
+                string s = p.AsString();
+                if (!string.IsNullOrEmpty(s) && double.TryParse(s.Replace(',', '.').Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double v))
+                {
+                    if (v > 50.0) return v / 1000.0;
+                    return v;
+                }
+            }
+            return 0.0;
+        }
+
+        private static void ParseDimensionsFromName(string name, ref double widthM, ref double heightM)
+        {
+            if (string.IsNullOrEmpty(name)) return;
+            try
+            {
+                // Поиск шаблона: 2140x1930 или 2140*1930 или 2140х1930
+                var match = System.Text.RegularExpressions.Regex.Match(name, @"(\d{3,4})\s*[\*xхXХ×]\s*(\d{3,4})");
+                if (match.Success)
+                {
+                    if (double.TryParse(match.Groups[1].Value, out double wMm) &&
+                        double.TryParse(match.Groups[2].Value, out double hMm))
+                    {
+                        if (wMm >= 300 && wMm <= 6000 && widthM < 0.25) widthM = wMm / 1000.0;
+                        if (hMm >= 300 && hMm <= 6000 && heightM < 0.25) heightM = hMm / 1000.0;
+                    }
                 }
             }
             catch { }
         }
 
-        private static double FindDimensionParam(Element instElem, Element typeElem, string[] textNames, BuiltInParameter[] bipNames)
+        private static void GetOpeningDimensionsFromGeometry(Element elem, out double widthM, out double heightM)
         {
-            // 1. Поиск по BuiltInParameter на экземпляре
-            if (instElem != null && bipNames != null)
-            {
-                foreach (var bip in bipNames)
-                {
-                    try
-                    {
-                        Parameter p = instElem.get_Parameter(bip);
-                        if (p != null && p.HasValue && p.StorageType == StorageType.Double && p.AsDouble() > 0.05)
-                            return p.AsDouble();
-                    }
-                    catch { }
-                }
-            }
+            widthM = 0;
+            heightM = 0;
+            if (elem == null) return;
 
-            // 2. Поиск по BuiltInParameter на ТИПЕ
-            if (typeElem != null && bipNames != null)
+            try
             {
-                foreach (var bip in bipNames)
+                if (elem is FamilyInstance fi)
                 {
-                    try
+                    XYZ hand = fi.HandOrientation; // Вектор вдоль стены
+                    if (hand != null && hand.GetLength() > 0.01)
                     {
-                        Parameter p = typeElem.get_Parameter(bip);
-                        if (p != null && p.HasValue && p.StorageType == StorageType.Double && p.AsDouble() > 0.05)
-                            return p.AsDouble();
-                    }
-                    catch { }
-                }
-            }
+                        XYZ uHand = new XYZ(hand.X, hand.Y, 0).Normalize();
 
-            // 3. Поиск по имени на экземпляре
-            if (instElem != null && textNames != null)
-            {
-                foreach (string name in textNames)
-                {
-                    try
-                    {
-                        Parameter p = instElem.LookupParameter(name);
-                        if (p != null && p.HasValue)
+                        BoundingBoxXYZ bb = elem.get_BoundingBox(null);
+                        if (bb != null)
                         {
-                            if (p.StorageType == StorageType.Double && p.AsDouble() > 0.05)
-                                return p.AsDouble();
-                            if (p.StorageType == StorageType.String && double.TryParse(p.AsString().Replace(',', '.'), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double v) && v > 0.05)
-                                return (v > 10.0) ? (v / 304.8) : v;
+                            double dzFt = Math.Abs(bb.Max.Z - bb.Min.Z);
+                            heightM = dzFt * 0.3048;
+
+                            XYZ min = bb.Min;
+                            XYZ max = bb.Max;
+                            XYZ[] pts = new XYZ[]
+                            {
+                                new XYZ(min.X, min.Y, 0),
+                                new XYZ(max.X, min.Y, 0),
+                                new XYZ(min.X, max.Y, 0),
+                                new XYZ(max.X, max.Y, 0)
+                            };
+
+                            double minP = double.MaxValue;
+                            double maxP = double.MinValue;
+                            foreach (var pt in pts)
+                            {
+                                double proj = pt.DotProduct(uHand);
+                                if (proj < minP) minP = proj;
+                                if (proj > maxP) maxP = proj;
+                            }
+                            double wFt = maxP - minP;
+                            widthM = wFt * 0.3048;
                         }
                     }
-                    catch { }
                 }
             }
-
-            // 4. Поиск по имени на ТИПЕ
-            if (typeElem != null && textNames != null)
-            {
-                foreach (string name in textNames)
-                {
-                    try
-                    {
-                        Parameter p = typeElem.LookupParameter(name);
-                        if (p != null && p.HasValue)
-                        {
-                            if (p.StorageType == StorageType.Double && p.AsDouble() > 0.05)
-                                return p.AsDouble();
-                            if (p.StorageType == StorageType.String && double.TryParse(p.AsString().Replace(',', '.'), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double v) && v > 0.05)
-                                return (v > 10.0) ? (v / 304.8) : v;
-                        }
-                    }
-                    catch { }
-                }
-            }
-
-            return 0.0;
+            catch { }
         }
     }
 }
