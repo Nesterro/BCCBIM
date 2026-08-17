@@ -35,14 +35,28 @@ namespace BCCPlugIn
                     .WhereElementIsNotElementType()
                     .Cast<FamilyInstance>()
                     .Where(e => {
+                        // Проверяем наличие любого из характерных параметров теплопотерь
+                        if (e.LookupParameter(HeatLossEngine.P_CONSTR_LABEL) != null) return true;
+                        if (e.LookupParameter(HeatLossEngine.P_ROOM_NUMBER) != null) return true;
+                        if (e.LookupParameter(HeatLossEngine.P_HEAT_LOSS) != null) return true;
+                        if (e.LookupParameter("BIMBCC_SpaceNumber") != null) return true;
+                        if (e.LookupParameter("BIMBCC_HeatLoss") != null) return true;
+
                         Parameter pMark = e.get_Parameter(BuiltInParameter.ALL_MODEL_MARK);
-                        return pMark != null && pMark.HasValue && pMark.AsString() == "BIMBCC_HEAT_LOSS_CUBE";
+                        if (pMark != null && pMark.HasValue)
+                        {
+                            string mark = pMark.AsString();
+                            if (!string.IsNullOrEmpty(mark) && (mark == "BCC_HL_CUBE" || mark == "BIMBCC_HEAT_LOSS_CUBE" || mark.StartsWith("BCC_HL")))
+                                return true;
+                        }
+
+                        return false;
                     })
                     .ToList();
 
                 if (cubes.Count == 0)
                 {
-                    errorMessage = "Не найдено размещенных элементов теплопотерь для экспорта.";
+                    errorMessage = "Не найдено размещенных элементов теплопотерь в текущем проекте.\nУбедитесь, что шаг расстановки кубиков был выполнен.";
                     return false;
                 }
 
@@ -405,16 +419,51 @@ namespace BCCPlugIn
                         .Replace("'", "&apos;");
         }
 
+        private static readonly Dictionary<string, string[]> ParamAliases = new Dictionary<string, string[]>
+        {
+            { HeatLossEngine.P_ROOM_NUMBER, new[] { HeatLossEngine.P_ROOM_NUMBER, "BIMBCC_SpaceNumber", "BCC_HL_Номер помещения", "Номер помещения" } },
+            { HeatLossEngine.P_ROOM_NAME, new[] { HeatLossEngine.P_ROOM_NAME, "BIMBCC_SpaceName", "BCC_HL_Имя помещения", "Имя помещения" } },
+            { HeatLossEngine.P_TEMP_OUT, new[] { HeatLossEngine.P_TEMP_OUT, "BIMBCC_OutdoorTemp", "BCC_HL_Температура наружного воздуха", "t_нар" } },
+            { HeatLossEngine.P_TEMP_IN, new[] { HeatLossEngine.P_TEMP_IN, "BIMBCC_IndoorTemp", "BCC_HL_Температура внутреннего воздуха", "t_вн" } },
+            { HeatLossEngine.P_CORNER_TYPE, new[] { HeatLossEngine.P_CORNER_TYPE, "BIMBCC_CornerType", "BCC_HL_Тип углового помещения" } },
+            { HeatLossEngine.P_CONSTR_LABEL, new[] { HeatLossEngine.P_CONSTR_LABEL, "BIMBCC_ConstructionLabel", "BCC_HL_Обозначение конструкции", "Обозначение" } },
+            { HeatLossEngine.P_ORIENTATION, new[] { HeatLossEngine.P_ORIENTATION, "BIMBCC_Orientation", "BCC_HL_Ориентация конструкции", "Ориентация" } },
+            { HeatLossEngine.P_AREA, new[] { HeatLossEngine.P_AREA, "BIMBCC_Area", "BCC_HL_Площадь конструкции", "Площадь" } },
+            { HeatLossEngine.P_COEFF_N, new[] { HeatLossEngine.P_COEFF_N, "BIMBCC_CoeffN", "BCC_HL_Коэффициент n", "Коэффициент n" } },
+            { HeatLossEngine.P_COEFF_K, new[] { HeatLossEngine.P_COEFF_K, "BIMBCC_CoeffK", "BCC_HL_Коэффициент теплопередачи k", "Коэффициент k" } },
+            { HeatLossEngine.P_ADD_B1, new[] { HeatLossEngine.P_ADD_B1, "BIMBCC_B1", "BCC_HL_Надбавка b1", "Надбавка b1" } },
+            { HeatLossEngine.P_ADD_B2, new[] { HeatLossEngine.P_ADD_B2, "BIMBCC_B2", "BCC_HL_Надбавка b2", "Надбавка b2" } },
+            { HeatLossEngine.P_ADD_B3, new[] { HeatLossEngine.P_ADD_B3, "BIMBCC_B3", "BCC_HL_Надбавка b3", "Надбавка b3" } },
+            { HeatLossEngine.P_ADD_B4, new[] { HeatLossEngine.P_ADD_B4, "BIMBCC_B4", "BCC_HL_Надбавка b4", "Надбавка b4" } },
+            { HeatLossEngine.P_COEFF_ADD, new[] { HeatLossEngine.P_COEFF_ADD, "BIMBCC_CoeffAllow", "BCC_HL_Коэффициент надбавки" } },
+            { HeatLossEngine.P_HEAT_LOSS, new[] { HeatLossEngine.P_HEAT_LOSS, "BIMBCC_HeatLoss", "BCC_HL_Теплопотери", "Теплопотери" } }
+        };
+
         private static string GetParamString(Element elem, string paramName)
         {
             if (elem == null) return "";
             try
             {
-                Parameter p = elem.LookupParameter(paramName);
-                if (p != null && p.HasValue)
+                if (ParamAliases.TryGetValue(paramName, out string[] aliases))
                 {
-                    if (p.StorageType == StorageType.String) return p.AsString() ?? "";
-                    return p.AsValueString() ?? "";
+                    foreach (string alias in aliases)
+                    {
+                        Parameter p = elem.LookupParameter(alias);
+                        if (p != null && p.HasValue)
+                        {
+                            if (p.StorageType == StorageType.String) return p.AsString() ?? "";
+                            return p.AsValueString() ?? "";
+                        }
+                    }
+                }
+                else
+                {
+                    Parameter p = elem.LookupParameter(paramName);
+                    if (p != null && p.HasValue)
+                    {
+                        if (p.StorageType == StorageType.String) return p.AsString() ?? "";
+                        return p.AsValueString() ?? "";
+                    }
                 }
             }
             catch { }
@@ -426,13 +475,30 @@ namespace BCCPlugIn
             if (elem == null) return 0.0;
             try
             {
-                Parameter p = elem.LookupParameter(paramName);
-                if (p != null && p.HasValue)
+                if (ParamAliases.TryGetValue(paramName, out string[] aliases))
                 {
-                    if (p.StorageType == StorageType.Double) return Math.Round(p.AsDouble(), 4);
-                    if (p.StorageType == StorageType.Integer) return p.AsInteger();
-                    if (double.TryParse(p.AsString().Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out double val))
-                        return val;
+                    foreach (string alias in aliases)
+                    {
+                        Parameter p = elem.LookupParameter(alias);
+                        if (p != null && p.HasValue)
+                        {
+                            if (p.StorageType == StorageType.Double) return Math.Round(p.AsDouble(), 4);
+                            if (p.StorageType == StorageType.Integer) return p.AsInteger();
+                            if (double.TryParse(p.AsString().Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out double val))
+                                return val;
+                        }
+                    }
+                }
+                else
+                {
+                    Parameter p = elem.LookupParameter(paramName);
+                    if (p != null && p.HasValue)
+                    {
+                        if (p.StorageType == StorageType.Double) return Math.Round(p.AsDouble(), 4);
+                        if (p.StorageType == StorageType.Integer) return p.AsInteger();
+                        if (double.TryParse(p.AsString().Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out double val))
+                            return val;
+                    }
                 }
             }
             catch { }

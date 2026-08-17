@@ -369,6 +369,13 @@ namespace BCCPlugIn
                                             SetNumber(inst, P_ADD_B3,    b3);
                                             SetNumber(inst, P_ADD_B4,    b4);
 
+                                            try
+                                            {
+                                                Parameter pMark = inst.get_Parameter(BuiltInParameter.ALL_MODEL_MARK);
+                                                if (pMark != null && !pMark.IsReadOnly) pMark.Set("BCC_HL_CUBE");
+                                            }
+                                            catch { }
+
                                             placedCount++;
                                         }
                                     }
@@ -1160,6 +1167,13 @@ namespace BCCPlugIn
                         SetNumber(inst, P_ADD_B2, b2);
                         SetNumber(inst, P_ADD_B3, b3);
                         SetNumber(inst, P_ADD_B4, b4);
+
+                        try
+                        {
+                            Parameter pMark = inst.get_Parameter(BuiltInParameter.ALL_MODEL_MARK);
+                            if (pMark != null && !pMark.IsReadOnly) pMark.Set("BCC_HL_CUBE");
+                        }
+                        catch { }
 
                         totalOpeningsAreaSqM += openingAreaSqM;
                         placedCount++;
