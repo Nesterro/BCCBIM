@@ -155,7 +155,24 @@ namespace BCCPlugIn
                 serverPanel.AddItem(serverButtonData);
 
                 // ----------------------------------------------------
-                // 5. Custom Tab Logo Header (ModPlus style)
+                // 6. Panel "Инфо" (Версия установленного плагина)
+                // ----------------------------------------------------
+                string infoPanelName = "Инфо";
+                RibbonPanel infoPanel = application.GetRibbonPanels(tabName).FirstOrDefault(p => p.Name == infoPanelName)
+                                     ?? application.CreateRibbonPanel(tabName, infoPanelName);
+
+                string currentVersion = GetPluginVersion();
+
+                PushButtonData aboutButtonData = new PushButtonData("BccAboutButton", $"BIMBCC\n{currentVersion}", thisAssemblyPath, typeof(AboutCommand).FullName)
+                {
+                    ToolTip = $"BIMBCC PlugIn для Autodesk Revit\nТекущая установленная версия: {currentVersion}\n\nНажмите для просмотра информации о модулях и проверки обновлений на GitHub.",
+                    LargeImage = getIcon("logo", false) ?? getIcon("rules_editor_icon", false),
+                    Image = getIcon("logo", true) ?? getIcon("rules_editor_icon", true)
+                };
+                infoPanel.AddItem(aboutButtonData);
+
+                // ----------------------------------------------------
+                // 7. Custom Tab Logo Header (ModPlus style)
                 // ----------------------------------------------------
                 BitmapImage tabLogo = GetEmbeddedImage(assembly, "BCCPlugIn.Resources.logo.png");
                 if (tabLogo != null)
@@ -170,6 +187,34 @@ namespace BCCPlugIn
                 TaskDialog.Show("Ошибка инициализации BIMBCC PlugIn", ex.Message);
                 return Result.Failed;
             }
+        }
+
+        public static string GetPluginVersion()
+        {
+            try
+            {
+                string asmLoc = Assembly.GetExecutingAssembly().Location;
+                if (!string.IsNullOrEmpty(asmLoc))
+                {
+                    string dir = Path.GetDirectoryName(asmLoc);
+                    string vFile = Path.Combine(dir, "version.txt");
+                    if (File.Exists(vFile))
+                    {
+                        string txt = File.ReadAllText(vFile).Trim();
+                        if (!string.IsNullOrEmpty(txt)) return txt;
+                    }
+                }
+            }
+            catch { }
+
+            try
+            {
+                Version v = Assembly.GetExecutingAssembly().GetName().Version;
+                if (v != null) return $"v{v.Major}.{v.Minor}.{v.Build}";
+            }
+            catch { }
+
+            return "v3.15.0";
         }
 
         public Result OnShutdown(UIControlledApplication application)
