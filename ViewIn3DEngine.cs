@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
-using Autodesk.Revit.DB.Architecture;
 using Autodesk.Revit.UI;
 
 namespace BCCPlugIn
@@ -18,7 +17,7 @@ namespace BCCPlugIn
             _doc = _uidoc.Document;
         }
 
-        public View3D CreateOrUpdate3DSectionView(ICollection<ElementId> selectedIds)
+        public View3D CreateOrUpdate3DSectionView(ICollection<ElementId> selectedIds, double paddingMm, bool showSectionBox)
         {
             BoundingBoxXYZ bbox = null;
 
@@ -29,7 +28,6 @@ namespace BCCPlugIn
 
             if (bbox == null && _uidoc.ActiveView is ViewPlan planView)
             {
-                // Fallback to active view crop box or room bounds if nothing selected
                 bbox = planView.CropBoxActive ? planView.CropBox : null;
             }
 
@@ -38,12 +36,12 @@ namespace BCCPlugIn
                 throw new Exception("Пожалуйста, выделите один или несколько элементов для 3D подрезки.");
             }
 
-            // Expand bounding box by 500mm (~1.64 ft)
-            double padding = 1.64;
+            // Convert mm to internal feet (1 ft = 304.8 mm)
+            double paddingFeet = paddingMm / 304.8;
             BoundingBoxXYZ expandedBBox = new BoundingBoxXYZ
             {
-                Min = new XYZ(bbox.Min.X - padding, bbox.Min.Y - padding, bbox.Min.Z - padding),
-                Max = new XYZ(bbox.Max.X + padding, bbox.Max.Y + padding, bbox.Max.Z + padding)
+                Min = new XYZ(bbox.Min.X - paddingFeet, bbox.Min.Y - paddingFeet, bbox.Min.Z - paddingFeet),
+                Max = new XYZ(bbox.Max.X + paddingFeet, bbox.Max.Y + paddingFeet, bbox.Max.Z + paddingFeet)
             };
 
             View3D view3d = GetOrCreate3DSectionView();
@@ -53,6 +51,14 @@ namespace BCCPlugIn
                 t.Start();
                 view3d.IsSectionBoxActive = true;
                 view3d.SetSectionBox(expandedBBox);
+
+                // Set section box visibility
+                Category sectionBoxCat = _doc.Settings.Categories.get_Item(BuiltInCategory.OST_SectionBox);
+                if (sectionBoxCat != null && view3d.CanCategoryBeHidden(sectionBoxCat.Id))
+                {
+                    view3d.SetCategoryHidden(sectionBoxCat.Id, !showSectionBox);
+                }
+
                 t.Commit();
             }
 
@@ -86,12 +92,11 @@ namespace BCCPlugIn
 
             if (!found) return null;
 
-            BoundingBoxXYZ result = new BoundingBoxXYZ
+            return new BoundingBoxXYZ
             {
                 Min = new XYZ(minX, minY, minZ),
                 Max = new XYZ(maxX, maxY, maxZ)
             };
-            return result;
         }
 
         private View3D GetOrCreate3DSectionView()
