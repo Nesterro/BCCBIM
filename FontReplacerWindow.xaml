@@ -1,41 +1,84 @@
 <Window x:Class="BCCPlugIn.FontReplacerWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="BIMBCC — Пакетная замена шрифтов" Height="400" Width="550"
+        Title="BIMBCC — Пакетная замена шрифтов и стилей текста" Height="580" Width="680"
         WindowStartupLocation="CenterScreen"
         Background="#1E1E1E" Foreground="#E0E0E0"
         FontFamily="Segoe UI" FontSize="13">
     <Grid Margin="14">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <Border Grid.Row="0" Background="#252526" CornerRadius="4" Padding="10" Margin="0,0,0,10">
+        <!-- Header -->
+        <Border Grid.Row="0" Background="#252526" CornerRadius="4" Padding="10" Margin="0,0,0,12">
             <StackPanel>
-                <TextBlock Text="BIMBCC — Замена шрифтов текстовых и размерных стилей" FontSize="15" FontWeight="Bold" Foreground="#FFFFFF"/>
-                <TextBlock Text="Пакетная замена шрифта во всех стилях текста, размеров и марок в документе" FontSize="11" Foreground="#AAAAAA" Margin="0,2,0,0"/>
+                <TextBlock Text="BIMBCC — Комплексная замена шрифтов и свойств текста" FontSize="15" FontWeight="Bold" Foreground="#FFFFFF"/>
+                <TextBlock Text="Пакетная обработка размеров, текста, аннотаций и спецификаций" FontSize="11" Foreground="#AAAAAA" Margin="0,2,0,0"/>
             </StackPanel>
         </Border>
 
-        <Grid Grid.Row="1" Margin="0,0,0,10">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-            <TextBlock Text="Новый шрифт:" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,10,0"/>
-            <ComboBox x:Name="FontsComboBox" Grid.Column="1" Padding="6,4" Background="#2D2D30" Foreground="#FFFFFF"/>
-        </Grid>
+        <!-- Form Body -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="4">
+                <!-- Group 1: Targets -->
+                <GroupBox Header="1. Где менять шрифт и свойства" Margin="0,0,0,12" Foreground="#007ACC" BorderBrush="#3F3F46" Padding="8">
+                    <WrapPanel Orientation="Horizontal">
+                        <CheckBox x:Name="TargetDimensionsCheckBox" Content="Размерные стили" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,20,8"/>
+                        <CheckBox x:Name="TargetTextNotesCheckBox" Content="Стили текста" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,20,8"/>
+                        <CheckBox x:Name="TargetAnnotationsCheckBox" Content="Семейства типовых аннотаций" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,20,8"/>
+                        <CheckBox x:Name="TargetSchedulesCheckBox" Content="Текст спецификаций" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,20,8"/>
+                    </WrapPanel>
+                </GroupBox>
 
-        <TextBlock Grid.Row="2" Text="Найдено стилей для обновления:" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                <!-- Group 2: Typography Settings -->
+                <GroupBox Header="2. Параметры шрифта и оформления" Foreground="#007ACC" BorderBrush="#3F3F46" Padding="10">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="160"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
 
-        <ListBox x:Name="StylesListBox" Grid.Row="3" Background="#2D2D30" Foreground="#FFFFFF" BorderBrush="#3F3F46" Margin="0,0,0,10"/>
+                        <!-- Font Family -->
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Шрифт текста:" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,4"/>
+                        <ComboBox x:Name="FontsComboBox" Grid.Row="0" Grid.Column="1" Padding="6,4" Background="#2D2D30" Foreground="#FFFFFF" Margin="0,4"/>
 
-        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button x:Name="ReplaceButton" Content="Заменить шрифты" Width="160" Padding="10,6" Background="#C91414" Foreground="#FFFFFF" FontWeight="Bold" Click="ReplaceButton_Click" Margin="0,0,8,0" Cursor="Hand"/>
+                        <!-- Text Size -->
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Размер текста (мм):" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,4"/>
+                        <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Margin="0,4">
+                            <TextBox x:Name="TextSizeTextBox" Width="100" Text="2.5" Padding="6,4" Background="#2D2D30" Foreground="#FFFFFF" BorderBrush="#434346"/>
+                            <CheckBox x:Name="OverrideTextSizeCheckBox" Content="Применить ко всем" IsChecked="False" Foreground="#E0E0E0" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                        </StackPanel>
+
+                        <!-- Width Scale -->
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Коэффициент ширины:" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,4"/>
+                        <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Margin="0,4">
+                            <TextBox x:Name="WidthScaleTextBox" Width="100" Text="1.0" Padding="6,4" Background="#2D2D30" Foreground="#FFFFFF" BorderBrush="#434346"/>
+                            <CheckBox x:Name="OverrideWidthScaleCheckBox" Content="Применить ко всем" IsChecked="False" Foreground="#E0E0E0" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                        </StackPanel>
+
+                        <!-- Styling & Flags -->
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Стилизация:" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,4"/>
+                        <WrapPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" Margin="0,4">
+                            <CheckBox x:Name="BoldCheckBox" Content="Полужирный (Bold)" Foreground="#FFFFFF" Margin="0,0,20,0"/>
+                            <CheckBox x:Name="ItalicCheckBox" Content="Курсив (Italic)" Foreground="#FFFFFF" Margin="0,0,20,0"/>
+                        </WrapPanel>
+                    </Grid>
+                </GroupBox>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Footer Bar -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+            <Button x:Name="ReplaceButton" Content="Применить шрифты" Width="170" Padding="10,6" Background="#C91414" Foreground="#FFFFFF" FontWeight="Bold" Click="ReplaceButton_Click" Margin="0,0,8,0" Cursor="Hand"/>
             <Button Content="Отмена" Width="90" Padding="10,6" Background="#333337" Foreground="#FFFFFF" BorderBrush="#555555" Click="CancelButton_Click" Cursor="Hand"/>
         </StackPanel>
     </Grid>
