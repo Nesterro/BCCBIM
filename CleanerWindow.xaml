@@ -1,0 +1,36 @@
+<Window x:Class="BCCPlugIn.CleanerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="BIMBCC — Глубокая очистка модели" Height="520" Width="640"
+        WindowStartupLocation="CenterScreen"
+        Background="#1E1E1E" Foreground="#E0E0E0"
+        FontFamily="Segoe UI" FontSize="13">
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Background="#252526" CornerRadius="4" Padding="10" Margin="0,0,0,12">
+            <StackPanel>
+                <TextBlock Text="BIMBCC — Очистка неиспользуемых элементов модели" FontSize="15" FontWeight="Bold" Foreground="#FFFFFF"/>
+                <TextBlock Text="Поиск и удаление избыточных мусорных объектов для оптимизации размера файла" FontSize="11" Foreground="#AAAAAA" Margin="0,2,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="4">
+                <CheckBox x:Name="UnplacedRoomsCheckBox" Content="Неразмещенные и не окруженные помещения (Unplaced Rooms)" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,0,10"/>
+                <CheckBox x:Name="UnusedViewsCheckBox" Content="Неразмещенные чертежные виды / листы без содержимого" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,0,10"/>
+                <CheckBox x:Name="ImportedCADCheckBox" Content="Неиспользуемые линии и слои импортированных DWG" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,0,10"/>
+                <CheckBox x:Name="PurgeUnusedNativeCheckBox" Content="Запустить стандартную очистку PurgeUnused (Revit internal API)" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,0,10"/>
+            </StackPanel>
+        </ScrollViewer>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+            <Button x:Name="PurgeButton" Content="Очистить модель" Width="170" Padding="10,6" Background="#C91414" Foreground="#FFFFFF" FontWeight="Bold" Click="PurgeButton_Click" Margin="0,0,8,0" Cursor="Hand"/>
+            <Button Content="Отмена" Width="90" Padding="10,6" Background="#333337" Foreground="#FFFFFF" BorderBrush="#555555" Click="CancelButton_Click" Cursor="Hand"/>
+        </StackPanel>
+    </Grid>
+</Window>
