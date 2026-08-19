@@ -365,6 +365,83 @@ namespace BCCPlugIn
                 };
                 dimPanel.AddItem(lineDimsButtonData);
 
+                PushButtonData dimOffsetButtonData = new PushButtonData("BccDimensionOffsetButton", "Смещение\nразмеров", thisAssemblyPath, typeof(DimensionOffsetCommand).FullName)
+                {
+                    ToolTip = "Автоматическое смещение текста размеров для устранения наложений.",
+                    LargeImage = getIcon("dimension_offset_icon", false),
+                    Image = getIcon("dimension_offset_icon", true)
+                };
+                dimPanel.AddItem(dimOffsetButtonData);
+
+                // ----------------------------------------------------
+                // 4i. Panel "Помещения"
+                // ----------------------------------------------------
+                string roomPanelName = "Помещения";
+                RibbonPanel roomPanel = application.GetRibbonPanels(tabName).FirstOrDefault(p => p.Name == roomPanelName)
+                                     ?? application.CreateRibbonPanel(tabName, roomPanelName);
+
+                PushButtonData roomVolumeButtonData = new PushButtonData("BccRoomVolumeButton", "Объем\nпомещений", thisAssemblyPath, typeof(RoomVolumeCommand).FullName)
+                {
+                    ToolTip = "Расчет и запись объема помещений в параметр.",
+                    LargeImage = getIcon("room_volume_icon", false),
+                    Image = getIcon("room_volume_icon", true)
+                };
+                roomPanel.AddItem(roomVolumeButtonData);
+
+                PushButtonData wallElevationsButtonData = new PushButtonData("BccWallElevationsButton", "Развертки\nстен", thisAssemblyPath, typeof(WallElevationsCommand).FullName)
+                {
+                    ToolTip = "Автоматическое построение видов разверток стен в помещениях.",
+                    LargeImage = getIcon("wall_elevations_icon", false),
+                    Image = getIcon("wall_elevations_icon", true)
+                };
+                roomPanel.AddItem(wallElevationsButtonData);
+
+                // ----------------------------------------------------
+                // 4j. Panel "Геометрия"
+                // ----------------------------------------------------
+                string geomPanelName = "Геометрия";
+                RibbonPanel geomPanel = application.GetRibbonPanels(tabName).FirstOrDefault(p => p.Name == geomPanelName)
+                                     ?? application.CreateRibbonPanel(tabName, geomPanelName);
+
+                PushButtonData splitByHeightButtonData = new PushButtonData("BccSplitByHeightButton", "Разделить по\nвысоте", thisAssemblyPath, typeof(SplitByHeightCommand).FullName)
+                {
+                    ToolTip = "Разделение стен по заданной высоте.",
+                    LargeImage = getIcon("split_by_height_icon", false),
+                    Image = getIcon("split_by_height_icon", true)
+                };
+                geomPanel.AddItem(splitByHeightButtonData);
+
+                PushButtonData copyElementsButtonData = new PushButtonData("BccCopyElementsButton", "Копировать\nэлементы", thisAssemblyPath, typeof(CopyElementsCommand).FullName)
+                {
+                    ToolTip = "Пакетное копирование элементов по уровням.",
+                    LargeImage = getIcon("copy_elements_icon", false),
+                    Image = getIcon("copy_elements_icon", true)
+                };
+                geomPanel.AddItem(copyElementsButtonData);
+
+                // ----------------------------------------------------
+                // 4k. Panel "Управление"
+                // ----------------------------------------------------
+                string managePanelName = "Управление";
+                RibbonPanel managePanel = application.GetRibbonPanels(tabName).FirstOrDefault(p => p.Name == managePanelName)
+                                       ?? application.CreateRibbonPanel(tabName, managePanelName);
+
+                PushButtonData renumberingButtonData = new PushButtonData("BccRenumberingButton", "Нумерация", thisAssemblyPath, typeof(RenumberingCommand).FullName)
+                {
+                    ToolTip = "Быстрая нумерация помещений, дверей и оборудования.",
+                    LargeImage = getIcon("renumbering_icon", false),
+                    Image = getIcon("renumbering_icon", true)
+                };
+                managePanel.AddItem(renumberingButtonData);
+
+                PushButtonData hatchManagerButtonData = new PushButtonData("BccHatchManagerButton", "Штриховки", thisAssemblyPath, typeof(HatchManagerCommand).FullName)
+                {
+                    ToolTip = "Менеджер образцов штриховок и закрасок.",
+                    LargeImage = getIcon("hatch_manager_icon", false),
+                    Image = getIcon("hatch_manager_icon", true)
+                };
+                managePanel.AddItem(hatchManagerButtonData);
+
                 // ----------------------------------------------------
                 // 5. Panel "Сервер"
                 // ----------------------------------------------------
