@@ -77,13 +77,7 @@ namespace BCCPlugIn
                 };
                 modelPanel.AddItem(openingsButtonData);
 
-                PushButtonData placeByXyzButtonData = new PushButtonData("BccPlaceByXyzButton", "Импорт\nXYZ", thisAssemblyPath, typeof(PlaceByXyzCommand).FullName)
-                {
-                    ToolTip = "Расстановка семейств по координатам XYZ из файла CSV/TXT (AutoCAD GEO).",
-                    LargeImage = getIcon("place_xyz_icon", false),
-                    Image = getIcon("place_xyz_icon", true)
-                };
-                modelPanel.AddItem(placeByXyzButtonData);
+
 
                 PushButtonData levelingButtonData = new PushButtonData("BccLevelingButton", "Привязка к\nуровням", thisAssemblyPath, typeof(LevelingCommand).FullName)
                 {
