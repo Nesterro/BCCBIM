@@ -17,10 +17,12 @@ namespace BCCPlugIn
             _doc = _uidoc.Document;
         }
 
-        public int SelectUntaggedElementsOnActiveView()
+        public int SelectUntaggedElementsOnActiveView(List<ElementId> categoryIds)
         {
             View activeView = _uidoc.ActiveView;
             if (activeView == null) throw new Exception("Нет активного вида.");
+
+            HashSet<ElementId> categoryIdSet = categoryIds != null ? new HashSet<ElementId>(categoryIds) : null;
 
             // Collect all independent tags on active view
             HashSet<ElementId> taggedElementIds = new HashSet<ElementId>();
@@ -42,10 +44,11 @@ namespace BCCPlugIn
                 catch { }
             }
 
-            // Collect all model elements visible on active view
+            // Collect model elements on active view belonging to selected categories
             List<Element> visibleElements = new FilteredElementCollector(_doc, activeView.Id)
                 .WhereElementIsNotElementType()
                 .Where(e => e.Category != null && e.Category.CategoryType == CategoryType.Model && !e.IsHidden(activeView))
+                .Where(e => categoryIdSet == null || categoryIdSet.Contains(e.Category.Id))
                 .ToList();
 
             List<ElementId> untaggedIds = visibleElements
