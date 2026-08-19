@@ -196,6 +196,91 @@ namespace BCCPlugIn
                 annotPanel.AddItem(taglessButtonData);
 
                 // ----------------------------------------------------
+                // 4c. Panel "Выборка"
+                // ----------------------------------------------------
+                string selectPanelName = "Выборка";
+                RibbonPanel selectPanel = application.GetRibbonPanels(tabName).FirstOrDefault(p => p.Name == selectPanelName)
+                                       ?? application.CreateRibbonPanel(tabName, selectPanelName);
+
+                PushButtonData filterSelButtonData = new PushButtonData("BccFilterSelectionButton", "Выбор по\nфильтрам", thisAssemblyPath, typeof(FilterSelectionCommand).FullName)
+                {
+                    ToolTip = "Продвинутая выборка элементов по значениям параметров и условиям.",
+                    LargeImage = getIcon("filter_selection_icon", false),
+                    Image = getIcon("filter_selection_icon", true)
+                };
+                selectPanel.AddItem(filterSelButtonData);
+
+                PushButtonData contextFilterButtonData = new PushButtonData("BccContextFilterButton", "Контекстный\nфильтр", thisAssemblyPath, typeof(ContextFilterCommand).FullName)
+                {
+                    ToolTip = "Быстрая выборка элементов с таким же типом и семейством.",
+                    LargeImage = getIcon("context_filter_icon", false),
+                    Image = getIcon("context_filter_icon", true)
+                };
+                selectPanel.AddItem(contextFilterButtonData);
+
+                PushButtonData colorizerButtonData = new PushButtonData("BccColorizerButton", "Раскраска\nэлементов", thisAssemblyPath, typeof(ColorizerCommand).FullName)
+                {
+                    ToolTip = "Временная цветная подсвечивание элементов по значениям выбранного параметра.",
+                    LargeImage = getIcon("colorizer_icon", false),
+                    Image = getIcon("colorizer_icon", true)
+                };
+                selectPanel.AddItem(colorizerButtonData);
+
+                // ----------------------------------------------------
+                // 4d. Panel "Аудит"
+                // ----------------------------------------------------
+                string auditPanelName = "Аудит";
+                RibbonPanel auditPanel = application.GetRibbonPanels(tabName).FirstOrDefault(p => p.Name == auditPanelName)
+                                      ?? application.CreateRibbonPanel(tabName, auditPanelName);
+
+                PushButtonData cleanerButtonData = new PushButtonData("BccCleanerButton", "Очистка\nмодели", thisAssemblyPath, typeof(CleanerCommand).FullName)
+                {
+                    ToolTip = "Глубокая очистка неиспользуемых элементов, видов и помещений.",
+                    LargeImage = getIcon("cleaner_icon", false),
+                    Image = getIcon("cleaner_icon", true)
+                };
+                auditPanel.AddItem(cleanerButtonData);
+
+                PushButtonData cadManagerButtonData = new PushButtonData("BccCADManagerButton", "CAD\nменеджер", thisAssemblyPath, typeof(CADManagerCommand).FullName)
+                {
+                    ToolTip = "Аудит и управление DWG/DXF подложками в модели.",
+                    LargeImage = getIcon("cad_manager_icon", false),
+                    Image = getIcon("cad_manager_icon", true)
+                };
+                auditPanel.AddItem(cadManagerButtonData);
+
+                PushButtonData linksManagerButtonData = new PushButtonData("BccLinksManagerButton", "Менеджер\nсвязей", thisAssemblyPath, typeof(LinksManagerCommand).FullName)
+                {
+                    ToolTip = "Централизованный аудит и управление внешними RVT связями.",
+                    LargeImage = getIcon("links_manager_icon", false),
+                    Image = getIcon("links_manager_icon", true)
+                };
+                auditPanel.AddItem(linksManagerButtonData);
+
+                PushButtonData materialManagerButtonData = new PushButtonData("BccMaterialManagerButton", "Менеджер\nматериалов", thisAssemblyPath, typeof(MaterialManagerCommand).FullName)
+                {
+                    ToolTip = "Просмотр и аудит материалов модели.",
+                    LargeImage = getIcon("material_manager_icon", false),
+                    Image = getIcon("material_manager_icon", true)
+                };
+                auditPanel.AddItem(materialManagerButtonData);
+
+                // ----------------------------------------------------
+                // 4e. Panel "Данные"
+                // ----------------------------------------------------
+                string dataPanelName = "Данные";
+                RibbonPanel dataPanel = application.GetRibbonPanels(tabName).FirstOrDefault(p => p.Name == dataPanelName)
+                                     ?? application.CreateRibbonPanel(tabName, dataPanelName);
+
+                PushButtonData excelImportButtonData = new PushButtonData("BccExcelImportButton", "Импорт из\nExcel", thisAssemblyPath, typeof(ExcelImportCommand).FullName)
+                {
+                    ToolTip = "Заполнение параметров элементов из таблиц Excel (.xlsx).",
+                    LargeImage = getIcon("excel_import_icon", false),
+                    Image = getIcon("excel_import_icon", true)
+                };
+                dataPanel.AddItem(excelImportButtonData);
+
+                // ----------------------------------------------------
                 // 5. Panel "Сервер"
                 // ----------------------------------------------------
                 string serverPanelName = "Сервер";
