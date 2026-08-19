@@ -35,10 +35,34 @@ namespace BCCPlugIn
             {
                 try
                 {
-                    ICollection<ElementId> taggedIds = tag.GetTaggedElementIds().Select(linkId => linkId.HostElementId).ToList();
-                    foreach (ElementId id in taggedIds)
+                    var taggedLinkIds = tag.GetTaggedElementIds();
+                    if (taggedLinkIds != null)
                     {
-                        if (id != ElementId.InvalidElementId) taggedElementIds.Add(id);
+                        foreach (var linkId in taggedLinkIds)
+                        {
+                            if (linkId.HostElementId != ElementId.InvalidElementId)
+                                taggedElementIds.Add(linkId.HostElementId);
+                            if (linkId.LinkedElementId != ElementId.InvalidElementId)
+                                taggedElementIds.Add(linkId.LinkedElementId);
+                        }
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    // Fallback for single host local tags across Revit API versions
+                    var localIdsMethod = tag.GetType().GetMethod("GetTaggedLocalElementIds");
+                    if (localIdsMethod != null)
+                    {
+                        var localIds = localIdsMethod.Invoke(tag, null) as ICollection<ElementId>;
+                        if (localIds != null)
+                        {
+                            foreach (ElementId id in localIds)
+                            {
+                                if (id != ElementId.InvalidElementId) taggedElementIds.Add(id);
+                            }
+                        }
                     }
                 }
                 catch { }
