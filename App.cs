@@ -281,6 +281,91 @@ namespace BCCPlugIn
                 dataPanel.AddItem(excelImportButtonData);
 
                 // ----------------------------------------------------
+                // 4f. Panel "Отделка"
+                // ----------------------------------------------------
+                string finishPanelName = "Отделка";
+                RibbonPanel finishPanel = application.GetRibbonPanels(tabName).FirstOrDefault(p => p.Name == finishPanelName)
+                                       ?? application.CreateRibbonPanel(tabName, finishPanelName);
+
+                PushButtonData roomFinishingButtonData = new PushButtonData("BccRoomFinishingButton", "Отделка\nпомещений", thisAssemblyPath, typeof(RoomFinishingCommand).FullName)
+                {
+                    ToolTip = "Автоматический расчет и построение отделочных стен по контуру помещений.",
+                    LargeImage = getIcon("room_finishing_icon", false),
+                    Image = getIcon("room_finishing_icon", true)
+                };
+                finishPanel.AddItem(roomFinishingButtonData);
+
+                PushButtonData roomFloorsButtonData = new PushButtonData("BccRoomFloorsButton", "Пол по\nпомещению", thisAssemblyPath, typeof(RoomFloorsCommand).FullName)
+                {
+                    ToolTip = "Автоматическое создание перекрытий чистых полов по контуру помещений.",
+                    LargeImage = getIcon("room_floors_icon", false),
+                    Image = getIcon("room_floors_icon", true)
+                };
+                finishPanel.AddItem(roomFloorsButtonData);
+
+                // ----------------------------------------------------
+                // 4g. Panel "MEP"
+                // ----------------------------------------------------
+                string mepPanelName = "MEP";
+                RibbonPanel mepPanel = application.GetRibbonPanels(tabName).FirstOrDefault(p => p.Name == mepPanelName)
+                                    ?? application.CreateRibbonPanel(tabName, mepPanelName);
+
+                PushButtonData mepBypassButtonData = new PushButtonData("BccMEPClashBypassButton", "Обход\nпересечений", thisAssemblyPath, typeof(MEPClashBypassCommand).FullName)
+                {
+                    ToolTip = "Автоматический обход пересечений инженерных сетей отводами.",
+                    LargeImage = getIcon("mep_clash_bypass_icon", false),
+                    Image = getIcon("mep_clash_bypass_icon", true)
+                };
+                mepPanel.AddItem(mepBypassButtonData);
+
+                PushButtonData mepConnectButtonData = new PushButtonData("BccMEPConnectButton", "MEP\nсоединения", thisAssemblyPath, typeof(MEPConnectCommand).FullName)
+                {
+                    ToolTip = "Быстрое соединение коннекторов инженерных сетей.",
+                    LargeImage = getIcon("mep_connect_icon", false),
+                    Image = getIcon("mep_connect_icon", true)
+                };
+                mepPanel.AddItem(mepConnectButtonData);
+
+                PushButtonData mepRotateButtonData = new PushButtonData("BccMEPRotateButton", "MEP\nвращение", thisAssemblyPath, typeof(MEPRotateCommand).FullName)
+                {
+                    ToolTip = "Вращение элементов MEP вокруг оси присоединения.",
+                    LargeImage = getIcon("mep_rotate_icon", false),
+                    Image = getIcon("mep_rotate_icon", true)
+                };
+                mepPanel.AddItem(mepRotateButtonData);
+
+                PushButtonData mepAlignButtonData = new PushButtonData("BccMEPAlignButton", "MEP\nвыравнивание", thisAssemblyPath, typeof(MEPAlignCommand).FullName)
+                {
+                    ToolTip = "Выравнивание высотных отметок воздуховодов и труб.",
+                    LargeImage = getIcon("mep_align_icon", false),
+                    Image = getIcon("mep_align_icon", true)
+                };
+                mepPanel.AddItem(mepAlignButtonData);
+
+                // ----------------------------------------------------
+                // 4h. Panel "Размеры"
+                // ----------------------------------------------------
+                string dimPanelName = "Размеры";
+                RibbonPanel dimPanel = application.GetRibbonPanels(tabName).FirstOrDefault(p => p.Name == dimPanelName)
+                                    ?? application.CreateRibbonPanel(tabName, dimPanelName);
+
+                PushButtonData planDimsButtonData = new PushButtonData("BccPlanDimensionsButton", "Размеры на\nплане", thisAssemblyPath, typeof(PlanDimensionsCommand).FullName)
+                {
+                    ToolTip = "Автоматическая простановка размеров на планах по стенам и проемам.",
+                    LargeImage = getIcon("plan_dimensions_icon", false),
+                    Image = getIcon("plan_dimensions_icon", true)
+                };
+                dimPanel.AddItem(planDimsButtonData);
+
+                PushButtonData lineDimsButtonData = new PushButtonData("BccLineDimensionsButton", "Размеры вдоль\nлинии", thisAssemblyPath, typeof(LineDimensionsCommand).FullName)
+                {
+                    ToolTip = "Простановка размеров вдоль выбранной опорной линии.",
+                    LargeImage = getIcon("line_dimensions_icon", false),
+                    Image = getIcon("line_dimensions_icon", true)
+                };
+                dimPanel.AddItem(lineDimsButtonData);
+
+                // ----------------------------------------------------
                 // 5. Panel "Сервер"
                 // ----------------------------------------------------
                 string serverPanelName = "Сервер";
