@@ -1,0 +1,42 @@
+<Window x:Class="BCCPlugIn.FontReplacerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="BIMBCC — Пакетная замена шрифтов" Height="400" Width="550"
+        WindowStartupLocation="CenterScreen"
+        Background="#1E1E1E" Foreground="#E0E0E0"
+        FontFamily="Segoe UI" FontSize="13">
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Background="#252526" CornerRadius="4" Padding="10" Margin="0,0,0,10">
+            <StackPanel>
+                <TextBlock Text="BIMBCC — Замена шрифтов текстовых и размерных стилей" FontSize="15" FontWeight="Bold" Foreground="#FFFFFF"/>
+                <TextBlock Text="Пакетная замена шрифта во всех стилях текста, размеров и марок в документе" FontSize="11" Foreground="#AAAAAA" Margin="0,2,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="Новый шрифт:" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,10,0"/>
+            <ComboBox x:Name="FontsComboBox" Grid.Column="1" Padding="6,4" Background="#2D2D30" Foreground="#FFFFFF"/>
+        </Grid>
+
+        <TextBlock Grid.Row="2" Text="Найдено стилей для обновления:" FontWeight="SemiBold" Margin="0,0,0,6"/>
+
+        <ListBox x:Name="StylesListBox" Grid.Row="3" Background="#2D2D30" Foreground="#FFFFFF" BorderBrush="#3F3F46" Margin="0,0,0,10"/>
+
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button x:Name="ReplaceButton" Content="Заменить шрифты" Width="160" Padding="10,6" Background="#C91414" Foreground="#FFFFFF" FontWeight="Bold" Click="ReplaceButton_Click" Margin="0,0,8,0" Cursor="Hand"/>
+            <Button Content="Отмена" Width="90" Padding="10,6" Background="#333337" Foreground="#FFFFFF" BorderBrush="#555555" Click="CancelButton_Click" Cursor="Hand"/>
+        </StackPanel>
+    </Grid>
+</Window>
