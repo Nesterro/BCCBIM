@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
@@ -19,10 +20,13 @@ namespace BCCPlugIn
 
             try
             {
-                TaglessEngine engine = new TaglessEngine(uidoc);
-                int count = engine.SelectUntaggedElementsOnActiveView();
-
-                TaskDialog.Show("Элементы без марок", $"На текущем виде найдено {count} немаркированных элементов. Они успешно выделены в модели.");
+                TaglessWindow win = new TaglessWindow(uidoc.Document, uidoc.ActiveView);
+                if (win.ShowDialog() == true)
+                {
+                    TaglessEngine engine = new TaglessEngine(uidoc);
+                    int count = engine.SelectUntaggedElementsOnActiveView(win.SelectedCategoryIds);
+                    TaskDialog.Show("Элементы без марок", $"На текущем виде найдено {count} немаркированных элементов в выбранных категориях. Они успешно выделены в модели.");
+                }
                 return Result.Succeeded;
             }
             catch (Exception ex)
