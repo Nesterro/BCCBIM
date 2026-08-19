@@ -21,8 +21,13 @@ namespace BCCPlugIn
             try
             {
                 ICollection<ElementId> selectedIds = uidoc.Selection.GetElementIds();
-                ViewIn3DEngine engine = new ViewIn3DEngine(uidoc);
-                engine.CreateOrUpdate3DSectionView(selectedIds);
+                ViewIn3DWindow win = new ViewIn3DWindow(uidoc);
+                if (win.ShowDialog() == true)
+                {
+                    ICollection<ElementId> finalIds = win.PickedElementIds ?? selectedIds;
+                    ViewIn3DEngine engine = new ViewIn3DEngine(uidoc);
+                    engine.CreateOrUpdate3DSectionView(finalIds, win.PaddingMm, win.ShowSectionBox);
+                }
                 return Result.Succeeded;
             }
             catch (Exception ex)
