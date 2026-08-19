@@ -1,4 +1,4 @@
-﻿<Window x:Class="BCCPlugIn.SumParametersWindow"
+<Window x:Class="BCCPlugIn.SumParametersWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="BIMBCC — Сумма параметров" Height="520" Width="720"
@@ -8,13 +8,64 @@
         
     
 
+        
+
         <Window.Resources>
-        <!-- Dark WPF High-Contrast Theme Styles -->
-        <Style TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#E0E0E0"/>
+        <!-- Common WPF Resource Keys -->
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+
+        <Style x:Key="PrimaryButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#C91414"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#E01818"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
 
-        <Style TargetType="TextBox">
+        <Style x:Key="SecondaryButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#333337"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="BorderBrush" Value="#555555"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#505054"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="LinkButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#007ACC"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+
+        <Style x:Key="FilterChipButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#2D2D30"/>
+            <Setter Property="Foreground" Value="#E0E0E0"/>
+            <Setter Property="BorderBrush" Value="#434346"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="Margin" Value="2"/>
+        </Style>
+
+        <Style x:Key="IconButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+
+        <Style x:Key="ModernTextBoxStyle" TargetType="TextBox">
             <Setter Property="Background" Value="#2D2D30"/>
             <Setter Property="Foreground" Value="#FFFFFF"/>
             <Setter Property="BorderBrush" Value="#434346"/>
@@ -28,6 +79,27 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
+
+        <Style x:Key="ModernListBoxStyle" TargetType="ListBox">
+            <Setter Property="Background" Value="#252526"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="BorderBrush" Value="#434346"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+
+        <Style x:Key="ModernTreeViewStyle" TargetType="TreeView">
+            <Setter Property="Background" Value="#252526"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="BorderBrush" Value="#434346"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+
+        <!-- Dark WPF High-Contrast Theme Styles -->
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#E0E0E0"/>
+        </Style>
+
+        <Style TargetType="TextBox" BasedOn="{StaticResource ModernTextBoxStyle}"/>
 
         <ControlTemplate x:Key="DarkComboBoxTemplate" TargetType="ComboBox">
             <Grid x:Name="MainGrid">
@@ -173,9 +245,9 @@
             </DataGrid.Resources>
             <DataGrid.Columns>
                 <DataGridTextColumn Header="Имя параметра" Binding="{Binding ParameterName}" Width="*" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Ед. изм." Binding="{Binding UnitName}" Width="80" IsReadOnly="True"/>
                 <DataGridTextColumn Header="Сумма" Binding="{Binding FormattedSum}" Width="130" IsReadOnly="True"/>
                 <DataGridTextColumn Header="Сумма с коэфф." Binding="{Binding FormattedSumWithCoeff}" Width="150" IsReadOnly="True"/>
-                <DataGridTextColumn Header="Ед. изм." Binding="{Binding UnitName}" Width="80" IsReadOnly="True"/>
                 <DataGridTextColumn Header="Кол-во" Binding="{Binding Count}" Width="70" IsReadOnly="True"/>
             </DataGrid.Columns>
         </DataGrid>
