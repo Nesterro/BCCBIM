@@ -38,7 +38,7 @@ namespace BCCPlugIn
             }
 
             int count = 0;
-            using (Transaction t = new Transaction(_doc, "BIMBCC: Базовый уровень"))
+            using (Transaction t = new Transaction(_doc, "BIMBCC: Расчет базового уровня"))
             {
                 t.Start();
                 foreach (Element elem in targets)
@@ -47,16 +47,61 @@ namespace BCCPlugIn
                     if (bbox == null) continue;
 
                     double minZ = bbox.Min.Z;
-                    Level closestLevel = levels.Where(l => l.Elevation <= minZ + 0.5).LastOrDefault() ?? levels.First();
 
-                    Parameter pLevel = elem.get_Parameter(BuiltInParameter.SCHEDULE_LEVEL_PARAM)
-                                    ?? elem.get_Parameter(BuiltInParameter.FAMILY_LEVEL_PARAM);
-
-                    if (pLevel != null && !pLevel.IsReadOnly)
+                    // Find nearest level below element Z OR closest level
+                    Level closestLevel = levels.Where(l => l.Elevation <= minZ + 0.1).LastOrDefault();
+                    if (closestLevel == null)
                     {
-                        pLevel.Set(closestLevel.Id);
-                        count++;
+                        closestLevel = levels.OrderBy(l => Math.Abs(l.Elevation - minZ)).FirstOrDefault();
                     }
+
+                    if (closestLevel == null) continue;
+
+                    bool setSuccess = false;
+
+                    // Candidate level parameters
+                    BuiltInParameter[] candidates = new BuiltInParameter[]
+                    {
+                        BuiltInParameter.WALL_BASE_CONSTRAINT,
+                        BuiltInParameter.FAMILY_BASE_LEVEL_PARAM,
+                        BuiltInParameter.FAMILY_LEVEL_PARAM,
+                        BuiltInParameter.SCHEDULE_LEVEL_PARAM,
+                        BuiltInParameter.INSTANCE_SCHEDULE_ONLY_LEVEL_PARAM,
+                        BuiltInParameter.ROOM_LEVEL_ID,
+                        BuiltInParameter.DPART_BASE_LEVEL
+                    };
+
+                    foreach (BuiltInParameter bip in candidates)
+                    {
+                        Parameter pLevel = elem.get_Parameter(bip);
+                        if (pLevel != null && !pLevel.IsReadOnly)
+                        {
+                            try
+                            {
+                                pLevel.Set(closestLevel.Id);
+                                setSuccess = true;
+                                break;
+                            }
+                            catch { }
+                        }
+                    }
+
+                    // Fallback to text lookup parameter "Базовый уровень" / "BCC_Базовый_уровень"
+                    if (!setSuccess)
+                    {
+                        Parameter pCustom = elem.LookupParameter("BCC_Базовый_уровень") ?? elem.LookupParameter("Базовый уровень");
+                        if (pCustom != null && !pCustom.IsReadOnly)
+                        {
+                            try
+                            {
+                                pCustom.Set(closestLevel.Name);
+                                setSuccess = true;
+                            }
+                            catch { }
+                        }
+                    }
+
+                    if (setSuccess) count++;
                 }
                 t.Commit();
             }
