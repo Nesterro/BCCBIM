@@ -14,6 +14,8 @@
 
     
 
+        
+
         <Window.Resources>
         <!-- Dark WPF High-Contrast Theme Styles -->
         <Style TargetType="TextBlock">
@@ -27,6 +29,7 @@
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="6,4"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="CaretBrush" Value="#FFFFFF"/>
             <Style.Triggers>
                 <Trigger Property="IsFocused" Value="True">
                     <Setter Property="BorderBrush" Value="#007ACC"/>
@@ -58,15 +61,16 @@
                 <Popup x:Name="PART_Popup" AllowsTransparency="True" Grid.ColumnSpan="2" Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}">
                     <Border x:Name="DropDownBorder" Background="#252526" BorderBrush="#434346" BorderThickness="1" Margin="0,2,0,0" CornerRadius="3">
                         <ScrollViewer Margin="2" SnapsToDevicePixels="True">
-                            <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained"/>
+                            <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/>
                         </ScrollViewer>
                     </Border>
                 </Popup>
             </Grid>
             <ControlTemplate.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
+                    <Setter TargetName="Border" Property="Background" Value="#3E3E42"/>
                     <Setter TargetName="Border" Property="BorderBrush" Value="#007ACC"/>
-                    <Setter TargetName="Arrow" Property="Fill" Value="#007ACC"/>
+                    <Setter TargetName="Arrow" Property="Fill" Value="#FFFFFF"/>
                 </Trigger>
                 <Trigger Property="IsFocused" Value="True">
                     <Setter TargetName="Border" Property="BorderBrush" Value="#007ACC"/>
@@ -79,13 +83,14 @@
             <Setter Property="Foreground" Value="#FFFFFF"/>
             <Setter Property="Padding" Value="8,6"/>
             <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter Property="Background" Value="#007ACC"/>
                     <Setter Property="Foreground" Value="#FFFFFF"/>
                 </Trigger>
                 <Trigger Property="IsSelected" Value="True">
-                    <Setter Property="Background" Value="#007ACC"/>
+                    <Setter Property="Background" Value="#005A9E"/>
                     <Setter Property="Foreground" Value="#FFFFFF"/>
                     <Setter Property="FontWeight" Value="Bold"/>
                 </Trigger>
