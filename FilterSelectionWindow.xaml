@@ -1,0 +1,69 @@
+<Window x:Class="BCCPlugIn.FilterSelectionWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="BIMBCC — Продвинутый выбор элементов по фильтрам" Height="480" Width="600"
+        WindowStartupLocation="CenterScreen"
+        Background="#1E1E1E" Foreground="#E0E0E0"
+        FontFamily="Segoe UI" FontSize="13">
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Background="#252526" CornerRadius="4" Padding="10" Margin="0,0,0,12">
+            <StackPanel>
+                <TextBlock Text="BIMBCC — Выбор элементов по логическим условиям" FontSize="15" FontWeight="Bold" Foreground="#FFFFFF"/>
+                <TextBlock Text="Фильтрация элементов по значениям параметров на виде или во всей модели" FontSize="11" Foreground="#AAAAAA" Margin="0,2,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="4">
+                <!-- Scope -->
+                <GroupBox Header="Область поиска" Foreground="#007ACC" BorderBrush="#3F3F46" Padding="8" Margin="0,0,0,10">
+                    <StackPanel Orientation="Horizontal">
+                        <RadioButton x:Name="ActiveViewRadioButton" Content="На активном виде" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,20,0"/>
+                        <RadioButton x:Name="EntireModelRadioButton" Content="Во всей модели" Foreground="#FFFFFF"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <!-- Category -->
+                <TextBlock Text="1. Категория элементов:" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                <ComboBox x:Name="CategoryComboBox" Background="#2D2D30" Foreground="#FFFFFF" Padding="6,4" SelectionChanged="CategoryComboBox_SelectionChanged" Margin="0,0,0,12"/>
+
+                <!-- Parameter -->
+                <TextBlock Text="2. Параметр для проверки:" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                <ComboBox x:Name="ParameterComboBox" Background="#2D2D30" Foreground="#FFFFFF" Padding="6,4" Margin="0,0,0,12"/>
+
+                <!-- Condition -->
+                <Grid Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="140"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                        <TextBlock Text="3. Оператор:" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <ComboBox x:Name="OperatorComboBox" Background="#2D2D30" Foreground="#FFFFFF" Padding="6,4">
+                            <ComboBoxItem Content="Равно (=)" IsSelected="True"/>
+                            <ComboBoxItem Content="Не равно (!=)"/>
+                            <ComboBoxItem Content="Содержит"/>
+                            <ComboBoxItem Content="Больше (>)"/>
+                            <ComboBoxItem Content="Меньше (&lt;)"/>
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1">
+                        <TextBlock Text="4. Значение для фильтра:" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <TextBox x:Name="ValueTextBox" Padding="6,4" Background="#2D2D30" Foreground="#FFFFFF" BorderBrush="#434346"/>
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+        </ScrollViewer>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+            <Button x:Name="SelectButton" Content="Выделить элементы" Width="170" Padding="10,6" Background="#C91414" Foreground="#FFFFFF" FontWeight="Bold" Click="SelectButton_Click" Margin="0,0,8,0" Cursor="Hand"/>
+            <Button Content="Отмена" Width="90" Padding="10,6" Background="#333337" Foreground="#FFFFFF" BorderBrush="#555555" Click="CancelButton_Click" Cursor="Hand"/>
+        </StackPanel>
+    </Grid>
+</Window>
