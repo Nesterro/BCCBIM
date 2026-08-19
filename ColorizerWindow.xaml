@@ -1,0 +1,40 @@
+<Window x:Class="BCCPlugIn.ColorizerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="BIMBCC — Временная раскраска элементов" Height="360" Width="520"
+        WindowStartupLocation="CenterScreen"
+        Background="#1E1E1E" Foreground="#E0E0E0"
+        FontFamily="Segoe UI" FontSize="13">
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Background="#252526" CornerRadius="4" Padding="10" Margin="0,0,0,12">
+            <StackPanel>
+                <TextBlock Text="BIMBCC — Раскраска элементов по значениям параметров" FontSize="15" FontWeight="Bold" Foreground="#FFFFFF"/>
+                <TextBlock Text="Временное цветовое подсвечивание элементов на текущем виде" FontSize="11" Foreground="#AAAAAA" Margin="0,2,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <StackPanel Grid.Row="1" VerticalAlignment="Center" Margin="6,0">
+            <TextBlock Text="Выберите параметр для раскраски:" FontWeight="SemiBold" Margin="0,0,0,6"/>
+            <ComboBox x:Name="ParameterComboBox" Background="#2D2D30" Foreground="#FFFFFF" Padding="6,4" Margin="0,0,0,16"/>
+            <TextBlock Text="Каждому уникальному значению параметра будет присвоен свой цвет." Foreground="#888888" FontSize="11"/>
+        </StackPanel>
+
+        <Grid Grid.Row="2" Margin="0,10,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Button Content="Сбросить графику" Padding="10,6" Background="#333337" Foreground="#FFFFFF" BorderBrush="#555555" Click="ResetGraphicsButton_Click" Cursor="Hand"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="ColorizeButton" Content="Раскрасить элементы" Width="170" Padding="10,6" Background="#C91414" Foreground="#FFFFFF" FontWeight="Bold" Click="ColorizeButton_Click" Margin="0,0,8,0" Cursor="Hand"/>
+                <Button Content="Отмена" Width="80" Padding="10,6" Background="#333337" Foreground="#FFFFFF" BorderBrush="#555555" Click="CancelButton_Click" Cursor="Hand"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>
