@@ -1,0 +1,34 @@
+<Window x:Class="BCCPlugIn.WallElevationsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="BIMBCC — Развертки стен по помещениям" Height="320" Width="500"
+        WindowStartupLocation="CenterScreen"
+        Background="#1E1E1E" Foreground="#E0E0E0"
+        FontFamily="Segoe UI" FontSize="13">
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Background="#252526" CornerRadius="4" Padding="10" Margin="0,0,0,12">
+            <StackPanel>
+                <TextBlock Text="BIMBCC — Автоматическое построение разверток стен" FontSize="15" FontWeight="Bold" Foreground="#FFFFFF"/>
+                <TextBlock Text="Создание видов разверток по 4 направлениям в помещениях" FontSize="11" Foreground="#AAAAAA" Margin="0,2,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <StackPanel Grid.Row="1" VerticalAlignment="Center" Margin="6,0">
+            <CheckBox x:Name="NorthCheckBox" Content="Северная развертка" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,0,8"/>
+            <CheckBox x:Name="EastCheckBox" Content="Восточная развертка" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,0,8"/>
+            <CheckBox x:Name="SouthCheckBox" Content="Южная развертка" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,0,8"/>
+            <CheckBox x:Name="WestCheckBox" Content="Западная развертка" IsChecked="True" Foreground="#FFFFFF" Margin="0,0,0,8"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+            <Button x:Name="CreateButton" Content="Создать развертки" Width="170" Padding="10,6" Background="#C91414" Foreground="#FFFFFF" FontWeight="Bold" Click="CreateButton_Click" Margin="0,0,8,0" Cursor="Hand"/>
+            <Button Content="Отмена" Width="90" Padding="10,6" Background="#333337" Foreground="#FFFFFF" BorderBrush="#555555" Click="CancelButton_Click" Cursor="Hand"/>
+        </StackPanel>
+    </Grid>
+</Window>
