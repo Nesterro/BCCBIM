@@ -166,19 +166,11 @@ namespace BCCPlugIn
 
                 PushButtonData baseLevelButtonData = new PushButtonData("BccBaseLevelButton", "Базовый\nуровень", thisAssemblyPath, typeof(BaseLevelCommand).FullName)
                 {
-                    ToolTip = "Определение и запись ближайшего нижнего уровня для элементов.",
+                    ToolTip = "Автоматический расчет и привязка базового уровня элементов к ближайшему нижележащему уровню.",
                     LargeImage = getIcon("base_level_icon", false),
                     Image = getIcon("base_level_icon", true)
                 };
                 paramPanel.AddItem(baseLevelButtonData);
-
-                PushButtonData worldOrientationButtonData = new PushButtonData("BccWorldOrientationButton", "Сторона\nсвета", thisAssemblyPath, typeof(WorldOrientationCommand).FullName)
-                {
-                    ToolTip = "Расчет и запись ориентации фасадов/стен (С, С-В, В, Ю-В, Ю, Ю-З, З, С-З) в параметр.",
-                    LargeImage = getIcon("world_orientation_icon", false),
-                    Image = getIcon("world_orientation_icon", true)
-                };
-                paramPanel.AddItem(worldOrientationButtonData);
 
                 // ----------------------------------------------------
                 // 4b. Panel "Аннотации"
