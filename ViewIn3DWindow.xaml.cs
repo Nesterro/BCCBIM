@@ -36,6 +36,19 @@ namespace BCCPlugIn
             Show();
         }
 
+        private void PaddingSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            // Interactive visual update placeholder when active view is 3D view
+            try
+            {
+                if (_uidoc?.ActiveView is View3D view3D && view3D.IsSectionBoxActive)
+                {
+                    // SectionBox dynamic preview update
+                }
+            }
+            catch { }
+        }
+
         private void ApplyButton_Click(object sender, RoutedEventArgs e)
         {
             DialogResult = true;
