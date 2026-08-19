@@ -139,6 +139,70 @@ namespace BCCPlugIn
                 };
                 viewsPanel.AddItem(filterCopyButtonData);
 
+                PushButtonData viewIn3dButtonData = new PushButtonData("BccViewIn3DButton", "3D\nподрезка", thisAssemblyPath, typeof(ViewIn3DCommand).FullName)
+                {
+                    ToolTip = "Быстрое создание 3D-вида подрезкой по выделенным элементам или помещению.",
+                    LargeImage = getIcon("view_in_3d_icon", false),
+                    Image = getIcon("view_in_3d_icon", true)
+                };
+                viewsPanel.AddItem(viewIn3dButtonData);
+
+                PushButtonData copyCropBoxButtonData = new PushButtonData("BccCopyCropBoxButton", "Копировать\nобрезку", thisAssemblyPath, typeof(CopyCropBoxCommand).FullName)
+                {
+                    ToolTip = "Копирование границ обрезки и секущего диапазона между видами.",
+                    LargeImage = getIcon("copy_crop_box_icon", false),
+                    Image = getIcon("copy_crop_box_icon", true)
+                };
+                viewsPanel.AddItem(copyCropBoxButtonData);
+
+                // Add SumParameters, BaseLevel, WorldOrientation to Parameters panel
+                PushButtonData sumParamsButtonData = new PushButtonData("BccSumParamsButton", "Сумма\nпараметров", thisAssemblyPath, typeof(SumParametersCommand).FullName)
+                {
+                    ToolTip = "Расчет суммы, среднего, мин/макс значений параметров для выбранных элементов.",
+                    LargeImage = getIcon("sum_parameters_icon", false),
+                    Image = getIcon("sum_parameters_icon", true)
+                };
+                paramPanel.AddItem(sumParamsButtonData);
+
+                PushButtonData baseLevelButtonData = new PushButtonData("BccBaseLevelButton", "Базовый\nуровень", thisAssemblyPath, typeof(BaseLevelCommand).FullName)
+                {
+                    ToolTip = "Определение и запись ближайшего нижнего уровня для элементов.",
+                    LargeImage = getIcon("base_level_icon", false),
+                    Image = getIcon("base_level_icon", true)
+                };
+                paramPanel.AddItem(baseLevelButtonData);
+
+                PushButtonData worldOrientationButtonData = new PushButtonData("BccWorldOrientationButton", "Сторона\nсвета", thisAssemblyPath, typeof(WorldOrientationCommand).FullName)
+                {
+                    ToolTip = "Расчет и запись ориентации фасадов/стен (С, С-В, В, Ю-В, Ю, Ю-З, З, С-З) в параметр.",
+                    LargeImage = getIcon("world_orientation_icon", false),
+                    Image = getIcon("world_orientation_icon", true)
+                };
+                paramPanel.AddItem(worldOrientationButtonData);
+
+                // ----------------------------------------------------
+                // 4b. Panel "Аннотации"
+                // ----------------------------------------------------
+                string annotPanelName = "Аннотации";
+                RibbonPanel annotPanel = application.GetRibbonPanels(tabName).FirstOrDefault(p => p.Name == annotPanelName)
+                                      ?? application.CreateRibbonPanel(tabName, annotPanelName);
+
+                PushButtonData fontReplacerButtonData = new PushButtonData("BccFontReplacerButton", "Заменить\nшрифт", thisAssemblyPath, typeof(FontReplacerCommand).FullName)
+                {
+                    ToolTip = "Пакетная замена шрифта во всех текстовых и размерных стилях проекта.",
+                    LargeImage = getIcon("font_replacer_icon", false),
+                    Image = getIcon("font_replacer_icon", true)
+                };
+                annotPanel.AddItem(fontReplacerButtonData);
+
+                PushButtonData taglessButtonData = new PushButtonData("BccTaglessButton", "Без\nмарок", thisAssemblyPath, typeof(TaglessCommand).FullName)
+                {
+                    ToolTip = "Поиск и выделение немаркированных элементов на активном виде.",
+                    LargeImage = getIcon("tagless_icon", false),
+                    Image = getIcon("tagless_icon", true)
+                };
+                annotPanel.AddItem(taglessButtonData);
+
                 // ----------------------------------------------------
                 // 5. Panel "Сервер"
                 // ----------------------------------------------------
