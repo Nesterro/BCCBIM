@@ -38,13 +38,13 @@ namespace BCCPlugIn
                 RibbonPanel exportPanel = application.GetRibbonPanels(tabName).FirstOrDefault(p => p.Name == exportPanelName)
                                        ?? application.CreateRibbonPanel(tabName, exportPanelName);
 
-                PushButtonData pdfButtonData = new PushButtonData("BccExportPdfButton", "Экспорт\nPDF", thisAssemblyPath, typeof(ExportPdfCommand).FullName)
+                PushButtonData sheetExportButtonData = new PushButtonData("BccSheetExportButton", "Экспорт\nлистов", thisAssemblyPath, typeof(SheetExportCommand).FullName)
                 {
-                    ToolTip = "Экспорт выбранных листов проекта Revit в PDF формат.",
+                    ToolTip = "Пакетный экспорт листов в PDF, DWG, DWF и растровые изображения без искажения шрифтов (аналог DiRoots ProSheets).",
                     LargeImage = getIcon("pdf_export_icon", false),
                     Image = getIcon("pdf_export_icon", true)
                 };
-                exportPanel.AddItem(pdfButtonData);
+                exportPanel.AddItem(sheetExportButtonData);
 
                 PushButtonData schedulePackButtonData = new PushButtonData("BccSchedulePackButton", "Пакет\nспецификаций", thisAssemblyPath, typeof(SchedulePackCommand).FullName)
                 {
